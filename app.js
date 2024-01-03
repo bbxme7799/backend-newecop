@@ -1,18 +1,15 @@
 import puppeteer from "puppeteer";
-import fs  from "fs";
-import axios  from "axios";
-import Bard from "bard-ai";
-import dotenv from 'dotenv';
+import * as util from "util";
+import axios from "axios";
+// import Bard from "bard-ai";
+import path from "path";
+import dotenv from "dotenv";
+import fs from "fs/promises";
 dotenv.config();
-
-import { EventEmitter } from 'events';
-EventEmitter.defaultMaxListeners = 0;
-
-process.setMaxListeners(30); // Increase the limit
 
 async function scrapeLinks(url) {
   const browser = await puppeteer.launch({
-    headless: 'new'
+    headless: false,
   });
   const page = await browser.newPage();
   await page.goto(url);
@@ -21,15 +18,17 @@ async function scrapeLinks(url) {
   let allLinks = [];
 
   while (hasNextPage) {
-    const links = await page.$$eval('.story-link', anchors => anchors.map(anchor => anchor.getAttribute('href')));
+    const links = await page.$$eval(".story-link", (anchors) =>
+      anchors.map((anchor) => anchor.getAttribute("href"))
+    );
     allLinks = allLinks.concat(links);
 
-    const nextPageButton = await page.$('#Blog1_blog-pager-older-link');
+    const nextPageButton = await page.$("#Blog1_blog-pager-older-link");
     if (nextPageButton) {
-      await page.waitForSelector('#Blog1_blog-pager-older-link');
+      await page.waitForSelector("#Blog1_blog-pager-older-link");
       await Promise.all([
-        page.click('#Blog1_blog-pager-older-link'),
-        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.click("#Blog1_blog-pager-older-link"),
+        page.waitForNavigation({ waitUntil: "domcontentloaded" }),
       ]);
     } else {
       hasNextPage = false;
@@ -40,168 +39,216 @@ async function scrapeLinks(url) {
   return allLinks;
 }
 
+async function downloadImage(imageUrl, folderPath) {
+  const imagePath = path.join(folderPath, path.basename(imageUrl));
+  try {
+    const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+    await fs.writeFile(imagePath, Buffer.from(response.data));
+    return imagePath;
+  } catch (error) {
+    console.error(
+      `Failed to download image from ${imageUrl}: ${error.message}`
+    );
+  }
+}
+
 async function scrapeArticleContent(link) {
   const browser = await puppeteer.launch({
-    headless: 'new',  // Set to true for headless mode
+    headless: "new", // Set to true for headless mode
   });
 
   try {
     const page = await browser.newPage();
-    await page.waitForTimeout(3000); // รอ 1 วินาที
     await page.goto(link);
 
-    await page.waitForSelector('.story-title');
-    await page.waitForSelector('.articlebody.clear.cf');
+    await page.waitForSelector(".story-title");
+    await page.waitForSelector(".articlebody.clear.cf");
 
-    const title = await page.$eval('.story-title', title => title.innerText);
-
-    const postmetaElement = await page.$('.postmeta');
-    const dateElement = await postmetaElement.$('.author');
-    const date = await dateElement.evaluate(node => node.textContent.trim());
-
-    const authorElement = await postmetaElement.$$('.author').then(nodes => nodes[1]);
-    const author = await authorElement.evaluate(node => node.textContent.trim());
-
-    let pTags = '';
-
-    try {
-      const pTagsElement = await postmetaElement.$('.p-tags');
-
-      if (pTagsElement) {
-        pTags = await pTagsElement.evaluate(node => node.textContent.trim());
-      } else {
-        console.error('p-tags element not found.');
-      }
-    } catch (error) {
-      console.error('An error occurred:', error.message);
-      pTags = ''; // Set pTags to an empty string or any default value
-    }
-
-    const imgLinksInSeparator = await page.$$eval('.separator a img', imgs => {
-      return imgs.map(img => {
-        const parentAnchor = img.closest('a');
-        if (parentAnchor) {
-          return img.getAttribute('src');
-        }
-      }).filter(src => src);
+    const title = await page.evaluate(() => {
+      const titleElement = document.querySelector(".story-title");
+      return titleElement ? titleElement.innerText : "";
     });
+
+    const author = await page.evaluate(() => {
+      const authorElements = document.querySelectorAll(".postmeta .author");
+      return authorElements.length > 1
+        ? authorElements[1].innerText.trim()
+        : "";
+    });
+
+    const pTags = await page.evaluate(() => {
+      const pTagsElement = document.querySelector(".postmeta .p-tags");
+      return pTagsElement ? pTagsElement.innerText.trim() : "";
+    });
+
+    const postmetaElement = await page.$(".postmeta");
+    const dateElement = await postmetaElement.$(".author");
+    const date = await dateElement.evaluate((node) => node.textContent.trim());
+
+    const imgLinksInSeparator = await page.$$eval(
+      ".separator a img",
+      (imgs) => {
+        return imgs
+          .filter((_, index) => index === 0)
+          .map((img) => {
+            const parentAnchor = img.closest("a");
+            if (parentAnchor) {
+              return img.getAttribute("src");
+            }
+          })
+          .filter((src) => src);
+      }
+    );
+
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    const imageFolder = path.join("images"); // Change this path accordingly
+
+    const downloadedImages = await Promise.allSettled(
+      imgLinksInSeparator.map(async (imageUrl) => {
+        try {
+          const downloadedImagePath = await downloadImage(
+            imageUrl,
+            imageFolder
+          );
+          if (downloadedImagePath) {
+            console.log(`Downloaded image: ${downloadedImagePath}`);
+            return downloadedImagePath;
+          } else {
+            console.error(`Failed to download image from ${imageUrl}`);
+            return null;
+          }
+        } catch (error) {
+          console.error(
+            `Failed to download image from ${imageUrl}: ${error.message}`
+          );
+          return null;
+        }
+      })
+    );
+
+    // Filter out only fulfilled promises (successful downloads)
+    const successfulDownloads = downloadedImages
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => {
+        const imagePath = result.value;
+        const imageName = path.basename(imagePath);
+        console.log(`Downloaded image: ${imageName}`);
+        return imageName;
+      });
+
+    console.log("Downloaded Images:", successfulDownloads);
 
     const articleContent = await page.evaluate(() => {
-      const contentElement = document.querySelector('.articlebody.clear.cf');
-      const paragraphs = contentElement.querySelectorAll('p');
+      const contentElement = document.querySelector(".articlebody.clear.cf");
 
-      const checkTwoElements = contentElement.querySelectorAll('.check_two.clear.babsi');
-      checkTwoElements.forEach(element => element.remove());
+      if (!contentElement) return "";
 
-      const CfElements = contentElement.querySelectorAll('.cf.note-b');
-      CfElements.forEach(element => element.remove());
+      const checkTwoElements = contentElement.querySelectorAll(
+        ".check_two.clear.babsi"
+      );
+      checkTwoElements.forEach((element) => element.remove());
 
-      const editorElements = contentElement.querySelectorAll('.editor-rtfLink');
-      editorElements.forEach(element => element.remove());
+      const CfElements = contentElement.querySelectorAll(".cf.note-b");
+      CfElements.forEach((element) => element.remove());
 
-      const content = Array.from(paragraphs).map(p => p.innerText).join('\n');
+      const editorElements = contentElement.querySelectorAll(".editor-rtfLink");
+      editorElements.forEach((element) => element.remove());
 
-      return content;
+      return contentElement.textContent;
     });
 
-    console.log("title =>", title)
-    console.log('Date:', date);
-    console.log('Author:', author);
-    console.log('P-Tags:', pTags);
-    console.log("Image Links in Separator:", imgLinksInSeparator);
-    console.log("articleContent =>", articleContent);
-    await page.waitForTimeout(2000); // รอ 1 วินาที
     await browser.close();
+
     return {
       title: title,
       date,
       author,
       pTags,
-      imgLinksInSeparator: imgLinksInSeparator,
-      contentEn: articleContent
+      imgLinksInSeparator: successfulDownloads,
+      contentEn: articleContent,
     };
   } catch (error) {
-    console.error('An error occurred:', error.message);
+    console.error("An error occurred:", error.message);
     await browser.close();
     // Return default values or an empty object in case of an error
     return {
-      title: '',
-      date: '',
-      author: '',
-      pTags: '',
+      title: "",
+      date: "",
+      author: "",
+      pTags: "",
       imgLinksInSeparator: [],
-      contentEn: ''
+      contentEn: "",
     };
   }
 }
 
-
-
 async function saveAllLinks() {
-  const homepageLinks = await scrapeLinks('https://thehackernews.com/');
-  const dataBreachLinks = await scrapeLinks('https://thehackernews.com/search/label/data%20breach');
-  const cyberAttackLinks = await scrapeLinks('https://thehackernews.com/search/label/Cyber%20Attack');
-  const vulnerabilityLinks = await scrapeLinks('https://thehackernews.com/search/label/Vulnerability');
+  const homepageLinks = await scrapeLinks("https://thehackernews.com/");
+  const dataBreachLinks = await scrapeLinks(
+    "https://thehackernews.com/search/label/data%20breach"
+  );
+  const cyberAttackLinks = await scrapeLinks(
+    "https://thehackernews.com/search/label/Cyber%20Attack"
+  );
+  const vulnerabilityLinks = await scrapeLinks(
+    "https://thehackernews.com/search/label/Vulnerability"
+  );
 
   const allLinks = {
-    'Home': homepageLinks,
-    'Data Breach': dataBreachLinks,
-    'Cyber Attack': cyberAttackLinks,
-    'Vulnerability': vulnerabilityLinks
+    Home: homepageLinks,
+    "Data Breach": dataBreachLinks,
+    "Cyber Attack": cyberAttackLinks,
+    Vulnerability: vulnerabilityLinks,
   };
 
-  fs.writeFileSync('all_links.json', JSON.stringify(allLinks, null, 2));
-  console.log('All links saved to all_links.json');
+  fs.writeFileSync("all_links.json", JSON.stringify(allLinks, null, 2));
+  console.log("All links saved to all_links.json");
 }
 
-async function saveArticleData() {
-  const allLinks = JSON.parse(fs.readFileSync('all_links.json', 'utf8'));
-  const articleData = {};
+async function scrapeAndSaveArticles() {
+  const allLinks = JSON.parse(await fs.readFile("all_links.json", "utf8"));
   let index = 1;
 
   try {
+    await fs.writeFile("article_data.json", "["); // Start JSON array
+
     for (const category in allLinks) {
       const categoryLinks = allLinks[category];
 
-      // Create an array to store promises for each article
-      const articlePromiseArray = [];
-
       for (const link of categoryLinks) {
-        // Process the promise as soon as it resolves
-        const articlePromise = scrapeArticleContent(link).then((articleContent) => {
-          articleData[index] = {
-            category,
-            title: articleContent.title,
-            date: articleContent.date,
-            author: articleContent.author,
-            pTags: articleContent.pTags,
-            contentEn: articleContent.contentEn,
-            ref: link,
-          };
-          index++;
-        });
+        const articleContent = await scrapeArticleContent(link);
+        const data = {
+          id: index,
+          category,
+          title: articleContent.title,
+          date: articleContent.date,
+          author: articleContent.author,
+          pTags: articleContent.pTags,
+          imgLinks: articleContent.imgLinksInSeparator,
+          contentEn: articleContent.contentEn,
+          ref: link,
+        };
 
-        articlePromiseArray.push(articlePromise);
+        const formattedData = JSON.stringify(data, null, 2);
+        await fs.appendFile("article_data.json", `${formattedData},\n`);
+
+        console.dir(data, { depth: null, compact: false });
+        console.log(`Article ${index} saved to article_data.json`);
+        index++;
       }
-
-      // Wait for all promises in the current category to resolve before moving to the next category
-      await Promise.all(articlePromiseArray);
     }
 
-    fs.writeFileSync('article_data.json', JSON.stringify(articleData, null, 2));
-    console.log('Article data saved to article_data.json');
+    await fs.appendFile("article_data.json", "]"); // End JSON array
+    console.log("All articles saved to article_data.json");
   } catch (error) {
-    console.error('An error occurred:', error.message);
+    console.error("An error occurred:", error.message);
   }
 }
 
-
-
-
-
+// Usage
 async function scrapeAndSaveAll() {
   // await saveAllLinks();
-  await saveArticleData();
+  await scrapeAndSaveArticles();
 }
 
 scrapeAndSaveAll();
