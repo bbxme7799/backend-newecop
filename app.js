@@ -299,11 +299,51 @@ async function translateThai() {
   console.log("Translation completed. Translated data saved to article_data.json");
 }
 
+import { PrismaClient } from '@prisma/client';
+
+
+async function JsonPushToDB() {
+  const prisma = new PrismaClient();
+
+  try {
+    // Read the JSON file
+    const rawData = await fs.readFile('article_data.json', 'utf-8');
+    const articles = JSON.parse(rawData);
+
+    // Iterate over articles and create entries in the database
+    for (const article of articles) {
+      // Join imgLinks array into a single string and remove square brackets
+      const imgLinksString = article.imgLinks.join(', ').replace(/[\[\]]/g, '');
+
+      await prisma.news.create({
+        data: {
+          category: article.category,
+          title: article.title,
+          date: article.date,
+          author: article.author,
+          pTags: article.pTags,
+          imgLinks: imgLinksString,
+          contentEn: article.contentEn,
+          ref: article.ref,
+          titleTh: article.titleTh,
+          contentTh: article.contentTh,
+        },
+      });
+    }
+
+    console.log('Data import successful');
+  } catch (error) {
+    console.error('Error importing data:', error);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
 // Usage
 async function scrapeAndSaveAll() {
   // await saveAllLinks();
   //await scrapeAndSaveArticles();
-  await translateThai();
+  //await translateThai();
+  await JsonPushToDB();
 }
 
 
