@@ -245,15 +245,66 @@ async function scrapeAndSaveArticles() {
   }
 }
 
-async function translteThai() {
+async function translateText(text, targetLanguage = "th") {
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+  const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
 
+  const textChunks = splitTextIntoChunks(text, 5000);
+
+  const translations = await Promise.all(textChunks.map(async (chunk) => {
+    const params = {
+      key: apiKey,
+      q: chunk,
+      target: targetLanguage
+    };
+
+    try {
+      const response = await axios.post(translateApiUrl, null, { params });
+      return response.data.data.translations[0].translatedText;
+    } catch (error) {
+      console.error('Translation error:', error.message);
+      throw error;
+    }
+  }));
+
+  const translatedText = translations.join(' ');
+
+  return translatedText;
+}
+
+function splitTextIntoChunks(text, chunkSize) {
+  const regex = new RegExp(`.{1,${chunkSize}}`, 'g');
+  return text.match(regex) || [];
+}
+
+async function translateThai() {
+  const rawData = await fs.readFile("article_data.json", "utf8");
+  const articles = JSON.parse(rawData);
+  const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
+
+  for (const article of articles) {
+    const titleEn = article.title;
+    const contentEn = article.contentEn;
+
+    const titleTh = await translateText(titleEn);
+    const contentTh = await translateText(contentEn);
+
+    article.titleTh = titleTh;
+    article.contentTh = contentTh;
+
+    // ทำการบันทึกทันทีหลังจากแปลแต่ละบทความ
+    await fs.writeFile("article_data.json", JSON.stringify(articles, null, 2), "utf8");
+  }
+
+  console.log("Translation completed. Translated data saved to article_data.json");
 }
 
 // Usage
 async function scrapeAndSaveAll() {
   // await saveAllLinks();
   //await scrapeAndSaveArticles();
-  await translteThai();
+  await translateThai();
 }
+
 
 scrapeAndSaveAll();

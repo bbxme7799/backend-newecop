@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "focus-fold-410204",
+  "private_key_id": "ccce5e8f8dd4b7d8a7d8b6d6ec37c814c2d94c03",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC1FtIdqLZg6GDC\nes2M0/xG49gV1U3/vyUKbsK5hprjtEe95Eaw0TiNUD1j9EKQZGuwDfs0JlU+7nX8\nRq66X/UG/YGFdDBxJE+wudfo/Z0XoEZ0LVWRAtpIj45/YeUFlPRafuKkZzZHke88\nncfpzAwNqFo6rC4Ew5/Z4LUBtrybbUVJkF7cv6AdvU893TKCQyAvH9lFkAb6QoSZ\nIzhP8zKlK+f9XlEUpOrPXWCS2NxjxlSddzQTrqAmYc33uJwOs0F5MO4Qbd/31a8h\nrYpfBWnsjEHBvLdDID2qAVWutm4H21IDvk0/VVfWdGxnTHE4mmKqEv7f1UY9oTdA\nYLBdI0K1AgMBAAECggEAHzlEGWERsTvgEyhhcLrMcNywUXNp84LdvCLE6IBRDJn1\nFMTbe3lXquX+79EZ+ROXjc+bVK6XXDZ5mXoGfpQ1B3OGdaBHCfsc0nf4xm+UOpKk\nEzwN2OcJBCHcjBIxDvlT+JaQNZCmR0jeWzFJWwKXwXMZu6wccy3XzhV0oEsF0jaG\nvQSn54YAnes2D5dXOs8/6093HRypBnllN+EFZuusx9+O6ZFuF61s5qkzf6O3PttX\nai6V390q+1njpEQJGlZTEhpb39r8KmqBU5Kyz1GWndLitvoTrKaOmR4b6FDJcY8o\nJ3p9vC7PWwxNuw6pHIxhsGabgd9+x7K08Vr7o8NigQKBgQDhImTWSuOBriAagnm0\nNFRPoM3LULaRtjNTGoYSoGvQz0qA2J5d9kh8y/QuIgNIf485huHVDuz167T3hj3t\nV2iF7sK7Ur806aM3LZzJ14gadZ7ck7aJSY3SdZZfPGTArgxQxG/ohxVWJdQgPkRb\nDAHojHjjNmAu8g8QCJZAWUJVGQKBgQDN6o8xqWCxJpQk/cftLIdbJU53Jw7I1ix4\na7bap3B2U2F5ySAx+8Fd4Y/u6QN012EaDpBLkg3Pu+D3eHbYcBP3bjclu3FRfd7V\nJ1sBjF+5gK4hceFT+Siu0HLSxza5KzdzRwohJcvu+vEcx+DvaDB8XQdlr+n5rk/8\niOWZ0bKR/QKBgGZGBaED7E5hF9xzIW6nxxVVa6fNRuLy7mX2SqnzjocRZDscLPVq\niIuI66h5cxxgNmRfzf/IBAXDyjYYGdHUP3t4d6Y5dPtImAjdA7j93KqIfF6gC/Ba\nJb9SA7nH6c1OQ/H9CwmLNDoqfS8YmlzyG3vVNKWjchZhiE40WG1rHyMhAoGAH+W9\n2MuMFuUK/c/yMGM9dHkK9pouSB4lNWI6KRTW7v1rlBn7ysJc6dYPHcsqpebXO9oV\nsB8n1I4eAze98TkrXqDMGiQ3IZCF/C7kghDkoy+zyaqCZSerjajsoIoLiBORu2G9\nx/S66oIk53hu96cEG7+tbasaa3r9GPl716AMMWECgYActhvS3KFDYNlfH3dcylEN\nDLtsS3CqP9eN1+wpdY+deziwhyG74TvYmR6ETNpayHk/8KUCMlZbNm7KpNgxu7I3\nBjmkV3OuQFu3RNKarxz3qDVHYrsUAjKWqQwF8O2v11eTuHkwJlIO5kQM3N2LZl3p\n6C0C425XI5vSNRjO9fpreA==\n-----END PRIVATE KEY-----\n",
+  "client_email": "newapi@focus-fold-410204.iam.gserviceaccount.com",
+  "client_id": "116829601966570976401",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/newapi%40focus-fold-410204.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
