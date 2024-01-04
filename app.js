@@ -245,10 +245,15 @@ async function scrapeAndSaveArticles() {
   }
 }
 
+async function translteThai() {
+
+}
+
 // Usage
 async function scrapeAndSaveAll() {
   // await saveAllLinks();
-  await scrapeAndSaveArticles();
+  //await scrapeAndSaveArticles();
+  await translteThai();
 }
 
 scrapeAndSaveAll();
