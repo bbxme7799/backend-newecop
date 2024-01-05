@@ -56,9 +56,8 @@ const removeElements = async (page, selector) => {
 
 // Add this utility function to generate a unique ID
 const generateUniqueId = () => {
-  return '_' + Math.random().toString(36).substr(2, 9);
+  return "_" + Math.random().toString(36).substr(2, 9);
 };
-
 
 const scrapeArticleData = async (browser, link) => {
   try {
@@ -75,7 +74,9 @@ const scrapeArticleData = async (browser, link) => {
 
     const author = await page.evaluate(() => {
       const authorElements = document.querySelectorAll(".postmeta .author");
-      return authorElements.length > 1 ? authorElements[1].innerText.trim() : "";
+      return authorElements.length > 1
+        ? authorElements[1].innerText.trim()
+        : "";
     });
 
     const pTags = await page.evaluate(() => {
@@ -87,24 +88,30 @@ const scrapeArticleData = async (browser, link) => {
     const dateElement = await postmetaElement.$(".author");
     const date = await dateElement.evaluate((node) => node.textContent.trim());
 
-    const imgLinksInSeparator = await page.$$eval(".separator a img", (imgs) => {
-      return imgs
-        .filter((_, index) => index === 0)
-        .map((img) => {
-          const parentAnchor = img.closest("a");
-          if (parentAnchor) {
-            return img.getAttribute("src");
-          }
-        })
-        .filter((src) => src);
-    });
+    const imgLinksInSeparator = await page.$$eval(
+      ".separator a img",
+      (imgs) => {
+        return imgs
+          .filter((_, index) => index === 0)
+          .map((img) => {
+            const parentAnchor = img.closest("a");
+            if (parentAnchor) {
+              return img.getAttribute("src");
+            }
+          })
+          .filter((src) => src);
+      }
+    );
 
     const imageFolder = path.join("images"); // Change this path accordingly
 
     const downloadedImages = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {
         try {
-          const downloadedImagePath = await downloadImage(imageUrl, imageFolder);
+          const downloadedImagePath = await downloadImage(
+            imageUrl,
+            imageFolder
+          );
           if (downloadedImagePath) {
             console.log(`Downloaded image: ${downloadedImagePath}`);
             return downloadedImagePath;
@@ -113,7 +120,9 @@ const scrapeArticleData = async (browser, link) => {
             return null;
           }
         } catch (error) {
-          console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
+          console.error(
+            `Failed to download image from ${imageUrl}: ${error.message}`
+          );
           return null;
         }
       })
@@ -135,7 +144,9 @@ const scrapeArticleData = async (browser, link) => {
 
       if (!contentElement) return "";
 
-      const checkTwoElements = contentElement.querySelectorAll(".check_two.clear.babsi");
+      const checkTwoElements = contentElement.querySelectorAll(
+        ".check_two.clear.babsi"
+      );
       checkTwoElements.forEach((element) => element.remove());
 
       const CfElements = contentElement.querySelectorAll(".cf.note-b");
@@ -149,6 +160,7 @@ const scrapeArticleData = async (browser, link) => {
 
     const articleData = {
       id: generateUniqueId(),
+      category: "Home",
       title,
       date,
       author,
@@ -191,22 +203,34 @@ const saveAllToJson = async (allData) => {
     const existingData = await fs.readFile(jsonFilePath, "utf-8");
     const jsonData = JSON.parse(existingData);
 
-    // Append new article data to existing array
-    jsonData.push(...allData);
+    // Check for duplicate data
+    const isDuplicate = jsonData.some((existingItem) =>
+      allData.some(
+        (newItem) =>
+          newItem.title === existingItem.title &&
+          newItem.date === existingItem.date
+      )
+    );
 
-    // Write the updated array back to the file
-    await fs.writeFile(jsonFilePath, JSON.stringify(jsonData, null, 2));
+    if (!isDuplicate) {
+      // No duplicates, append new data
+      jsonData.push(...allData);
+
+      // Write the updated array back to the file
+      await fs.writeFile(jsonFilePath, JSON.stringify(jsonData, null, 2));
+      console.log(`Scraped data has been saved to ${jsonFilePath}`);
+    } else {
+      console.log("Duplicate data found, not saving to the file.");
+    }
   } catch (error) {
     // File does not exist, create a new JSON file
     const jsonData = allData;
 
     // Write the array to the file
     await fs.writeFile(jsonFilePath, JSON.stringify(jsonData, null, 2));
+    console.log(`Scraped data has been saved to ${jsonFilePath}`);
   }
-
-  console.log(`Scraped data has been saved to ${jsonFilePath}`);
 };
-
 
 const downloadImage = async (imageUrl, folderPath) => {
   const imagePath = path.join(folderPath, path.basename(imageUrl));
@@ -221,17 +245,19 @@ const downloadImage = async (imageUrl, folderPath) => {
     console.log(`Downloaded image: ${imagePath}`);
     return imagePath;
   } catch (error) {
-    console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
+    console.error(
+      `Failed to download image from ${imageUrl}: ${error.message}`
+    );
     return null;
   }
 };
 
-const scrapedData = []; 
+const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
   cron.schedule("*/1 * * * *", async () => {
     try {
-      const browser = await puppeteer.launch({ headless: 'new' });
+      const browser = await puppeteer.launch({ headless: "new" });
       const page = await browser.newPage();
       await page.waitForTimeout(1000);
       await page.goto("https://thehackernews.com/");
@@ -241,7 +267,9 @@ export const hackerNewFetchToday = async () => {
       await removeElements(page, ".right-box");
 
       const dateTimeElement = await page.$(".h-datetime");
-      const dateTimeText = await (dateTimeElement ? dateTimeElement.evaluate((node) => node.innerText) : "");
+      const dateTimeText = await (dateTimeElement
+        ? dateTimeElement.evaluate((node) => node.innerText)
+        : "");
 
       const datesMatch = compareDates(dateTimeText);
 
@@ -250,25 +278,87 @@ export const hackerNewFetchToday = async () => {
         const matchedLinks = [];
 
         for (const storyLinkElement of storyLinkElements) {
-          const linkHref = await storyLinkElement.evaluate((node) => node.getAttribute("href"));
+          const linkHref = await storyLinkElement.evaluate((node) =>
+            node.getAttribute("href")
+          );
           // console.log("🚀 linkHref:", linkHref)
           const linkDateTimeElement = await storyLinkElement.$(".h-datetime");
-          const linkDateTimeText = await (linkDateTimeElement ? linkDateTimeElement.evaluate((node) => node.innerText) : "");
+          const linkDateTimeText = await (linkDateTimeElement
+            ? linkDateTimeElement.evaluate((node) => node.innerText)
+            : "");
           const linkDatesMatch = compareDates(linkDateTimeText);
 
           if (linkDatesMatch) {
             matchedLinks.push(linkHref);
-            console.log("🚀 ~ file: hackerNewFetchToday.js:243 ~ cron.schedule ~ matchedLinks:", matchedLinks)
+            // console.log(
+            //   "🚀 ~ file: hackerNewFetchToday.js:243 ~ cron.schedule ~ matchedLinks:",
+            //   matchedLinks
+            // );
           }
         }
 
         if (matchedLinks.length > 0) {
           for (const matchedLink of matchedLinks) {
-            console.log("🚀 ~ file: hackerNewFetchToday.js:249 ~ cron.schedule ~ matchedLinks:", matchedLinks)
             // console.log("🚀 matchedLink:", matchedLink)
             await scrapeArticleData(browser, matchedLink);
           }
           await saveAllToJson(scrapedData);
+          try {
+            const jsonFilePath = path.join("schedules", "scrapedData.json");
+            // อ่านข้อมูลจากไฟล์ JSON
+            const jsonData = fs.readFileSync(jsonFilePath, "utf-8");
+
+            // แปลงข้อมูล JSON เป็น Object
+            const scrapedData = JSON.parse(jsonData);
+
+            // เพิ่มข้อมูลลงใน MySQL ด้วย Prisma
+            for (const articleData of scrapedData) {
+              // ตรวจสอบว่าข้อมูลซ้ำหรือไม่
+              const existingArticle = await prisma.news.findFirst({
+                where: {
+                  title: articleData.title,
+                  date: articleData.date,
+                },
+              });
+
+              if (!existingArticle) {
+                // ถ้าไม่ซ้ำ, เพิ่มข้อมูลลงใน MySQL
+                await prisma.news.create({
+                  data: {
+                    category: articleData.category,
+                    title: articleData.title,
+                    date: articleData.date,
+                    author: articleData.author,
+                    pTags: articleData.pTags,
+                    imgLinks: articleData.imgLinks,
+                    contentEn: articleData.contentEn,
+                    ref: articleData.ref,
+                    titleTh: articleData.titleTh,
+                    contentTh: articleData.contentTh,
+                    // ตรวจสอบว่าข้อมูล editorUsername มีค่าหรือไม่ ถ้ามีให้เพิ่ม editor ลงในข้อมูล
+                    ...(articleData.editorUsername && {
+                      editor: {
+                        connect: { username: articleData.editorUsername },
+                      },
+                    }),
+                  },
+                });
+
+                console.log(
+                  `ข้อมูล "${articleData.title}" ได้ถูกเพิ่มลงใน MySQL แล้ว`
+                );
+              } else {
+                console.log(
+                  `ข้อมูล "${articleData.title}" มีอยู่ใน MySQL แล้ว ไม่ได้ทำการเพิ่ม`
+                );
+              }
+            }
+          } catch (error) {
+            console.error("เกิดข้อผิดพลาดในการอ่านไฟล์ JSON:", error);
+          } finally {
+            // ปิดการเชื่อมต่อ Prisma Client เมื่อเสร็จสิ้น
+            await prisma.$disconnect();
+          }
         } else {
           console.log("No elements with class 'story-link' found.");
         }
@@ -284,36 +374,37 @@ export const hackerNewFetchToday = async () => {
   });
 };
 
-
-
 async function translateText(text, targetLanguage = "th") {
   const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-  const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
+  const translateApiUrl =
+    "https://translation.googleapis.com/language/translate/v2";
 
   const textChunks = splitTextIntoChunks(text, 5000);
 
-  const translations = await Promise.all(textChunks.map(async (chunk) => {
-    const params = {
-      key: apiKey,
-      q: chunk,
-      target: targetLanguage
-    };
+  const translations = await Promise.all(
+    textChunks.map(async (chunk) => {
+      const params = {
+        key: apiKey,
+        q: chunk,
+        target: targetLanguage,
+      };
 
-    try {
-      const response = await axios.post(translateApiUrl, null, { params });
-      return response.data.data.translations[0].translatedText;
-    } catch (error) {
-      console.error('Translation error:', error.message);
-      throw error;
-    }
-  }));
+      try {
+        const response = await axios.post(translateApiUrl, null, { params });
+        return response.data.data.translations[0].translatedText;
+      } catch (error) {
+        console.error("Translation error:", error.message);
+        throw error;
+      }
+    })
+  );
 
-  const translatedText = translations.join(' ');
+  const translatedText = translations.join(" ");
 
   return translatedText;
 }
 
 function splitTextIntoChunks(text, chunkSize) {
-  const regex = new RegExp(`.{1,${chunkSize}}`, 'g');
+  const regex = new RegExp(`.{1,${chunkSize}}`, "g");
   return text.match(regex) || [];
 }

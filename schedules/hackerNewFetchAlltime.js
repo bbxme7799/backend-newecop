@@ -10,8 +10,8 @@ dotenv.config();
 const prisma = new PrismaClient();
 export const hackerNewFetchAlltime = async () => {
   //every 1 minitue
-  // cron.schedule("*/ * * * *", async () => {
-  cron.schedule("0 0 * * *", async () => {
+  cron.schedule("*/ * * * *", async () => {
+  // cron.schedule("0 0 * * *", async () => {
 async function scrapeLinks(url) {
   const browser = await puppeteer.launch({
     headless: false,
@@ -311,7 +311,8 @@ async function JsonPushToDB() {
 
   try {
     // Read the JSON file
-    const rawData = await fs.readFile('article_data.json', 'utf-8');
+    const rawData = await fs.readFile('schedules/article_data.json', 'utf-8');
+
     const articles = JSON.parse(rawData);
 
     // Iterate over articles and create entries in the database

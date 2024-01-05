@@ -13,6 +13,7 @@ import { hackerNewFetchToday } from "../schedules/hackerNewFetchToday.js";
 const app = express();
 // resetProductSchedule();
 hackerNewFetchToday();
+// hackerNewFetchAlltime();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(morgan("dev"));
