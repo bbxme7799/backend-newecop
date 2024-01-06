@@ -65,27 +65,15 @@ const scrapeArticleData = async (browser, link) => {
     await page.goto(link);
 
 
-    // Scroll ไปจนถึงสุดของหน้า
-  await page.evaluate(async () => {
-    await new Promise((resolve, reject) => {
-      let totalHeight = 0;
-      const distance = 100;
-      const maxScrollAttempts = 100;
-
-      const scrollInterval = setInterval(() => {
-        const scrollHeight = document.body.scrollHeight;
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-
-        if (totalHeight >= scrollHeight || maxScrollAttempts <= 0) {
-          clearInterval(scrollInterval);
-          resolve();
-        }
-
-        maxScrollAttempts--;
-      }, 100);
+   // Scroll down 3 times, waiting for some time between scrolls
+   for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
     });
-  });
+
+    // Wait for a short time to allow content to load or for animations to complete
+    await page.waitForTimeout(1000);
+  }
 
     await page.waitForSelector(".story-title");
     await page.waitForSelector(".articlebody.clear.cf");
@@ -322,6 +310,9 @@ export const hackerNewFetchToday = async () => {
       await page.waitForTimeout(1000);
       await page.goto("https://thehackernews.com/");
 
+
+      
+
       // Remove unwanted elements
       await removeElements(page, ".icon-font.icon-calendar");
       await removeElements(page, ".right-box");
@@ -329,6 +320,16 @@ export const hackerNewFetchToday = async () => {
       await removeElements(page, ".footer-stuff.clear.cf");
       await removeElements(page, ".email-box");
       await removeElements(page, ".header.clear");
+
+       // Scroll down 3 times, waiting for some time between scrolls
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => {
+        window.scrollBy(0, window.innerHeight);
+      });
+  
+      // Wait for a short time to allow content to load or for animations to complete
+      await page.waitForTimeout(1000);
+    }
 
       const dateTimeElement = await page.$(".h-datetime");
       const dateTimeText = await (dateTimeElement
