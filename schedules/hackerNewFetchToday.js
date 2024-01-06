@@ -64,6 +64,29 @@ const scrapeArticleData = async (browser, link) => {
     const page = await browser.newPage();
     await page.goto(link);
 
+
+    // Scroll ไปจนถึงสุดของหน้า
+  await page.evaluate(async () => {
+    await new Promise((resolve, reject) => {
+      let totalHeight = 0;
+      const distance = 100;
+      const maxScrollAttempts = 100;
+
+      const scrollInterval = setInterval(() => {
+        const scrollHeight = document.body.scrollHeight;
+        window.scrollBy(0, distance);
+        totalHeight += distance;
+
+        if (totalHeight >= scrollHeight || maxScrollAttempts <= 0) {
+          clearInterval(scrollInterval);
+          resolve();
+        }
+
+        maxScrollAttempts--;
+      }, 100);
+    });
+  });
+
     await page.waitForSelector(".story-title");
     await page.waitForSelector(".articlebody.clear.cf");
 
@@ -252,6 +275,43 @@ const downloadImage = async (imageUrl, folderPath) => {
   }
 };
 
+
+async function translateText(text, targetLanguage = "th") {
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+  const translateApiUrl =
+    "https://translation.googleapis.com/language/translate/v2";
+
+  const textChunks = splitTextIntoChunks(text, 5000);
+
+  const translations = await Promise.all(
+    textChunks.map(async (chunk) => {
+      const params = {
+        key: apiKey,
+        q: chunk,
+        target: targetLanguage,
+      };
+
+      try {
+        const response = await axios.post(translateApiUrl, null, { params });
+        return response.data.data.translations[0].translatedText;
+      } catch (error) {
+        console.error("Translation error:", error.message);
+        throw error;
+      }
+    })
+  );
+
+  const translatedText = translations.join(" ");
+
+  return translatedText;
+}
+
+function splitTextIntoChunks(text, chunkSize) {
+  const regex = new RegExp(`.{1,${chunkSize}}`, "g");
+  return text.match(regex) || [];
+}
+
+
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
@@ -265,6 +325,10 @@ export const hackerNewFetchToday = async () => {
       // Remove unwanted elements
       await removeElements(page, ".icon-font.icon-calendar");
       await removeElements(page, ".right-box");
+      await removeElements(page, ".below-post-box.cf");
+      await removeElements(page, ".footer-stuff.clear.cf");
+      await removeElements(page, ".email-box");
+      await removeElements(page, ".header.clear");
 
       const dateTimeElement = await page.$(".h-datetime");
       const dateTimeText = await (dateTimeElement
@@ -302,6 +366,7 @@ export const hackerNewFetchToday = async () => {
             // console.log("🚀 matchedLink:", matchedLink)
             await scrapeArticleData(browser, matchedLink);
           }
+          
           await saveAllToJson(scrapedData);
           try {
             const jsonFilePath = path.join("schedules", "scrapedData.json");
@@ -373,38 +438,3 @@ export const hackerNewFetchToday = async () => {
     }
   });
 };
-
-async function translateText(text, targetLanguage = "th") {
-  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-  const translateApiUrl =
-    "https://translation.googleapis.com/language/translate/v2";
-
-  const textChunks = splitTextIntoChunks(text, 5000);
-
-  const translations = await Promise.all(
-    textChunks.map(async (chunk) => {
-      const params = {
-        key: apiKey,
-        q: chunk,
-        target: targetLanguage,
-      };
-
-      try {
-        const response = await axios.post(translateApiUrl, null, { params });
-        return response.data.data.translations[0].translatedText;
-      } catch (error) {
-        console.error("Translation error:", error.message);
-        throw error;
-      }
-    })
-  );
-
-  const translatedText = translations.join(" ");
-
-  return translatedText;
-}
-
-function splitTextIntoChunks(text, chunkSize) {
-  const regex = new RegExp(`.{1,${chunkSize}}`, "g");
-  return text.match(regex) || [];
-}

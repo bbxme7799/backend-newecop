@@ -7,17 +7,22 @@ import dotenv from "dotenv";
 import fs from "fs/promises";
 dotenv.config();
 
-const prisma = new PrismaClient();
-export const hackerNewFetchAlltime = async () => {
-  //every 1 minitue
-  cron.schedule("*/ * * * *", async () => {
-  // cron.schedule("0 0 * * *", async () => {
 async function scrapeLinks(url) {
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: 'new',
   });
   const page = await browser.newPage();
   await page.goto(url);
+  
+    // Scroll down 3 times, waiting for some time between scrolls
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => {
+        window.scrollBy(0, window.innerHeight);
+      });
+  
+      // Wait for a short time to allow content to load or for animations to complete
+      await page.waitForTimeout(1000);
+    }
 
   let hasNextPage = true;
   let allLinks = [];
@@ -27,7 +32,16 @@ async function scrapeLinks(url) {
       anchors.map((anchor) => anchor.getAttribute("href"))
     );
     allLinks = allLinks.concat(links);
-
+    console.log("🚀 ~ file: hackerNewFetchAlltime.js:35 ~ scrapeLinks ~ allLinks:", allLinks);
+     // Scroll down 3 times, waiting for some time between scrolls
+     for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => {
+        window.scrollBy(0, window.innerHeight);
+      });
+  
+      // Wait for a short time to allow content to load or for animations to complete
+      await page.waitForTimeout(1000);
+    }
     const nextPageButton = await page.$("#Blog1_blog-pager-older-link");
     if (nextPageButton) {
       await page.waitForSelector("#Blog1_blog-pager-older-link");
@@ -65,6 +79,8 @@ async function scrapeArticleContent(link) {
   try {
     const page = await browser.newPage();
     await page.goto(link);
+
+
 
     await page.waitForSelector(".story-title");
     await page.waitForSelector(".articlebody.clear.cf");
@@ -210,6 +226,11 @@ async function saveAllLinks() {
   console.log("All links saved to all_links.json");
 }
 
+// Add this utility function to generate a unique ID
+const generateUniqueId = () => {
+  return "_" + Math.random().toString(36).substr(2, 9);
+};
+
 async function scrapeAndSaveArticles() {
   const allLinks = JSON.parse(await fs.readFile("all_links.json", "utf8"));
   let index = 1;
@@ -223,7 +244,7 @@ async function scrapeAndSaveArticles() {
       for (const link of categoryLinks) {
         const articleContent = await scrapeArticleContent(link);
         const data = {
-          id: index,
+          id: generateUniqueId(),
           category,
           title: articleContent.title,
           date: articleContent.date,
@@ -343,12 +364,21 @@ async function JsonPushToDB() {
     await prisma.$disconnect();
   }
 }
+
+
+const prisma = new PrismaClient();
+export const hackerNewFetchAlltime = async () => {
+  //every 1 minitue
+  cron.schedule("*/1 * * * *", async () => {
+  // cron.schedule("0 0 * * *", async () => {
+
+
 // Usage
 async function scrapeAndSaveAll() {
-  // await saveAllLinks();
-  //await scrapeAndSaveArticles();
+  await saveAllLinks();
+  // await scrapeAndSaveArticles();
   //await translateThai();
-  await JsonPushToDB();
+  // await JsonPushToDB();
 }
 
 
