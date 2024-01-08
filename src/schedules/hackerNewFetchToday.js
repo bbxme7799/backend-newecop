@@ -3,7 +3,9 @@ import puppeteer from "puppeteer";
 import path from "path";
 import axios from "axios";
 import fs from "fs/promises"; // Assuming you are using Node.js version 14.0.0 or later
+import { PrismaClient } from "@prisma/client";
 
+const prisma = new PrismaClient();
 const compareDates = (dateTimeText) => {
   const dateTimeComponents = dateTimeText.match(/(\w{3}) (\d{2}), (\d{4})/);
   if (dateTimeComponents) {
@@ -114,7 +116,7 @@ const scrapeArticleData = async (browser, link) => {
       }
     );
 
-    const imageFolder = path.join("../images"); // Change this path accordingly
+    const imageFolder = path.join("images"); // Change this path accordingly
 
     const downloadedImages = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {
@@ -183,20 +185,38 @@ const scrapeArticleData = async (browser, link) => {
 
     console.log("Scraped Article Data:", articleData);
 
-    // Translate text
-    const translatedTitle = await translateText(title);
-    const translatedContent = await translateText(articleContent);
+    // อ่านข้อมูลจากไฟล์ scrapedData.json
+    const jsonFilePath = path.join("src/schedules", "scrapedData.json");
+       // Check if the file exists
+       await fs.access(jsonFilePath);
 
-    const translatedArticleData = {
-      ...articleData,
-      titleTh: translatedTitle,
-      contentTh: translatedContent,
-    };
+       // File exists, read existing JSON data
+       const existingData = await fs.readFile(jsonFilePath, "utf-8");
+       const jsonData = JSON.parse(existingData);
+    // เช็คว่า articleData.title และ articleData.date มีอยู่ใน scrapedData หรือไม่
+      const isTitleExist = jsonData.some(data => data.title === articleData.title);
+      const isDateExist = jsonData.some(data => data.date === articleData.date);
 
-    console.log("Translated Article Data:", translatedArticleData);
+      if (isTitleExist && isDateExist) {
+        console.log("Data already exists. Translation not needed.");
+      } else {
+        // Translate text
+        const translatedTitle = await translateText(articleData.title);
+        const translatedContent = await translateText(articleData.contentEn);
+      
+        const translatedArticleData = {
+          ...articleData,
+          titleTh: translatedTitle,
+          contentTh: translatedContent,
+        };
+        console.log("Translated Article Data:", translatedArticleData);
 
-    // Add the translated scraped data to the array
-    scrapedData.push(translatedArticleData);
+
+        // Add the translated scraped data to the array
+        scrapedData.push(translatedArticleData);
+      }
+
+    
     // await page.close();
   } catch (error) {
     console.error("An error occurred while scraping article data:", error);
@@ -204,7 +224,7 @@ const scrapeArticleData = async (browser, link) => {
 };
 
 const saveAllToJson = async (allData) => {
-  const jsonFilePath = path.join("schedules", "scrapedData.json");
+  const jsonFilePath = path.join("src/schedules", "scrapedData.json");
 
   try {
     // Check if the file exists
@@ -300,11 +320,70 @@ function splitTextIntoChunks(text, chunkSize) {
 }
 
 
+
+const updateCategoryByTitle = async (title, newCategory) => {
+  try {
+    const existingArticle = await prisma.news.findFirst({
+      where: { title },
+    });
+
+    if (existingArticle) {
+      if (existingArticle.category !== newCategory) {
+        await prisma.news.update({
+          where: { id: existingArticle.id },
+          data: { category: newCategory },
+        });
+
+        console.log(`Category updated for article "${title}"`);
+      } else {
+        // console.log(`Category is already "${newCategory}" for article "${title}"`);
+      }
+    } else {
+      console.log(`Article "${title}" not found`);
+    }
+  } catch (error) {
+    console.error(`Error updating category for article "${title}":`, error);
+  }
+};
+
+
+const checkAndUpdateCategory = async (url, expectedCategory) => {
+  const browser = await puppeteer.launch({ headless: "new" });
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(url);
+    await page.waitForSelector('.blog-posts.clear');
+
+    const titles = await page.evaluate(() => {
+      const titleElements = document.querySelectorAll('.home-title');
+      return Array.from(titleElements, (element) => element.textContent);
+    });
+    console.log("🚀 ~ file: hackerNewFetchToday.js:492 ~ titles ~ titles:", titles)
+
+    for (const title of titles) {
+      const existingArticle = await prisma.news.findFirst({
+        where: { title },
+      });
+
+      if (existingArticle) {
+        await updateCategoryByTitle(title, expectedCategory);
+      }
+    }
+  } catch (error) {
+    console.error(`Error checking and updating category for ${url}:`, error);
+  } finally {
+    await browser.close();
+  }
+};
+
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
   cron.schedule("*/1 * * * *", async () => {
     try {
+      checkAndUpdateCategory('https://thehackernews.com/search/label/Cyber%20Attack', 'CyberAttack');
+      checkAndUpdateCategory('https://thehackernews.com/search/label/Vulnerability', 'Vulnerability');   
       const browser = await puppeteer.launch({ headless: "new" });
       const page = await browser.newPage();
       await page.waitForTimeout(1000);
@@ -370,15 +449,16 @@ export const hackerNewFetchToday = async () => {
           
           await saveAllToJson(scrapedData);
           try {
-            const jsonFilePath = path.join("schedules", "scrapedData.json");
+            const jsonFilePath = path.join("src/schedules", "scrapedData.json");
             // อ่านข้อมูลจากไฟล์ JSON
-            const jsonData = fs.readFileSync(jsonFilePath, "utf-8");
+            const jsonData = await fs.readFile(jsonFilePath, "utf-8");
 
             // แปลงข้อมูล JSON เป็น Object
             const scrapedData = JSON.parse(jsonData);
 
             // เพิ่มข้อมูลลงใน MySQL ด้วย Prisma
             for (const articleData of scrapedData) {
+              const imgLinksString = articleData.imgLinks.join(', ').replace(/[\[\]]/g, '');
               // ตรวจสอบว่าข้อมูลซ้ำหรือไม่
               const existingArticle = await prisma.news.findFirst({
                 where: {
@@ -396,7 +476,7 @@ export const hackerNewFetchToday = async () => {
                     date: articleData.date,
                     author: articleData.author,
                     pTags: articleData.pTags,
-                    imgLinks: articleData.imgLinks,
+                    imgLinks: imgLinksString,
                     contentEn: articleData.contentEn,
                     ref: articleData.ref,
                     titleTh: articleData.titleTh,
@@ -432,7 +512,6 @@ export const hackerNewFetchToday = async () => {
         // Perform actions when dates do not match
         // ...
       }
-
       await browser.close();
     } catch (error) {
       console.error("An error occurred:", error);

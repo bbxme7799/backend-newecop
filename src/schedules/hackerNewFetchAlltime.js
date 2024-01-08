@@ -332,7 +332,7 @@ async function JsonPushToDB() {
 
   try {
     // Read the JSON file
-    const rawData = await fs.readFile('schedules/article_data.json', 'utf-8');
+    const rawData = await fs.readFile('src/schedules/article_data.json', 'utf-8');
 
     const articles = JSON.parse(rawData);
 
@@ -341,20 +341,32 @@ async function JsonPushToDB() {
       // Join imgLinks array into a single string and remove square brackets
       const imgLinksString = article.imgLinks.join(', ').replace(/[\[\]]/g, '');
 
-      await prisma.news.create({
-        data: {
-          category: article.category,
+      // // Check if a record with the same title and date exists
+      const existingArticle = await prisma.news.findFirst({
+        where: {
           title: article.title,
           date: article.date,
-          author: article.author,
-          pTags: article.pTags,
-          imgLinks: imgLinksString,
-          contentEn: article.contentEn,
-          ref: article.ref,
-          titleTh: article.titleTh,
-          contentTh: article.contentTh,
         },
       });
+      if (!existingArticle) {
+        // If no matching record exists, create a new entry
+        await prisma.news.create({
+          data: {
+            category: article.category,
+            title: article.title,
+            date: article.date,
+            author: article.author,
+            pTags: article.pTags,
+            imgLinks: imgLinksString,
+            contentEn: article.contentEn,
+            ref: article.ref,
+            titleTh: article.titleTh,
+            contentTh: article.contentTh,
+          },
+        });
+      } else {
+        console.log(`Skipping duplicate record: ${article.title} - ${article.date}`);
+      }
     }
 
     console.log('Data import successful');
@@ -375,10 +387,10 @@ export const hackerNewFetchAlltime = async () => {
 
 // Usage
 async function scrapeAndSaveAll() {
-  await saveAllLinks();
+  // await saveAllLinks();
   // await scrapeAndSaveArticles();
-  //await translateThai();
-  // await JsonPushToDB();
+  // await translateThai();
+  await JsonPushToDB();
 }
 
 
