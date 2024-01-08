@@ -114,7 +114,7 @@ const scrapeArticleData = async (browser, link) => {
       }
     );
 
-    const imageFolder = path.join("images"); // Change this path accordingly
+    const imageFolder = path.join("../images"); // Change this path accordingly
 
     const downloadedImages = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {

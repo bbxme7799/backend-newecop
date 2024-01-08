@@ -1,5 +1,5 @@
 import express from "express";
-// import { authRoute } from "./auth/auth.route.js";
+import { authRoute } from "./auth/auth.route.js";
 // import { categoryRoute } from "./categories/categories.route.js";
 // import { productsRoute } from "./products/products.route.js";
 // import { usdRoute } from "./usd/usd.route.js";
@@ -12,7 +12,7 @@ import express from "express";
 
 const router = express.Router();
 
-// router.use("/auth", authRoute);
+router.use("/auth", authRoute);
 // router.use("/categories", categoryRoute);
 // router.use("/carts", cartsRoute);
 // router.use("/products", productsRoute);
