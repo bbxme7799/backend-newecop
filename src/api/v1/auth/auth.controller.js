@@ -215,6 +215,7 @@ export const signin = async (req, res, next) => {
         {
           id: eUser.id,
           email: eUser.email,
+          username: eUser.username,
           role: eUser.role,
           is_banned: eUser.is_banned,
         },

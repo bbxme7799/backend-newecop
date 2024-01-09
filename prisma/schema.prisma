@@ -27,6 +27,17 @@ model News {
   editorUsername String?
   created_at        DateTime            @default(now()) @db.Timestamp(6)
   updated_at        DateTime            @updatedAt
+  viewCount  Int       @default(0)
+  viewedBy   View[]    // Change to reference the View model
+}
+
+
+model View {
+  id        Int     @id @default(autoincrement())
+  ip        String
+  userAgent String
+  newsId    Int
+  news      News    @relation(fields: [newsId], references: [id])
 }
 
 

@@ -330,13 +330,13 @@ const updateCategoryByTitle = async (title, newCategory) => {
     if (existingArticle) {
       if (existingArticle.category !== newCategory) {
         await prisma.news.update({
-          where: { id: existingArticle.id },
+          where: { title },
           data: { category: newCategory },
         });
 
         console.log(`Category updated for article "${title}"`);
       } else {
-        // console.log(`Category is already "${newCategory}" for article "${title}"`);
+        console.log(`Category is already "${newCategory}" for article "${title}"`);
       }
     } else {
       console.log(`Article "${title}" not found`);
