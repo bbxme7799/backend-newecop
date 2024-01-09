@@ -1,87 +1,117 @@
 // controllers/newsController.js
 import { PrismaClient } from "@prisma/client";
-import { SearchNewsQuerySchema,GetNewsQuerySchema } from "./news.schema.js"
+import { SearchNewsQuerySchema,GetNewsQuerySchema,updateNewsSchema,logViewSchema,idSchema,createNewsSchema } from "./news.schema.js"
 const prisma = new PrismaClient();
 
 const ITEMS_PER_PAGE = 10;
 
 export const getNews = async (req, res, next) => {
-    try {
-        const { page, sort, order, category } = GetNewsQuerySchema.parse(req.query);
-        const parsedPage = parseInt(page) || 1;
-        const skip = (parsedPage - 1) * ITEMS_PER_PAGE;
-        const sortField = req.query.sort || 'created_at';
-        const sortOrder = req.query.order || 'desc'; // Default sorting order
+  try {
+    const { page, category } = GetNewsQuerySchema.parse(req.query);
+    const parsedPage = parseInt(page) || 1;
+    const pageSize = ITEMS_PER_PAGE;
+    const skip = (parsedPage - 1) * pageSize;
+    const sortField = req.query.sort || 'created_at';
+    const sortOrder = req.query.order || 'desc'; // Default sorting order
 
-        let whereCondition = {}; // Initial empty condition
+    let whereCondition = {}; // Initial empty condition
 
-        // Check if a category is provided in the query
-        if (category) {
-            whereCondition = {
-                ...whereCondition,
-                category,
-            };
-        }
-
-        const totalNews = await prisma.news.count({
-            where: whereCondition, // Apply the condition to the total count
-        });
-
-        const totalPages = Math.ceil(totalNews / ITEMS_PER_PAGE);
-
-        const news = await prisma.news.findMany({
-            take: ITEMS_PER_PAGE,
-            skip: skip,
-            orderBy: {
-                [sortField]: sortOrder,
-            },
-            where: whereCondition, // Apply the condition to the news query
-        });
-
-        res.status(200).json({
-            news,
-            pagination: {
-                currentPage: parsedPage,
-                totalPages,
-                totalItems: totalNews,
-            },
-        });
-    } catch (error) {
-        console.error(error);
-        next(error);
+    // Check if a category is provided in the query
+    if (category) {
+      whereCondition = {
+        ...whereCondition,
+        category,
+      };
     }
+
+    const totalNews = await prisma.news.count({
+      where: whereCondition, // Apply the condition to the total count
+    });
+
+    const totalPages = Math.ceil(totalNews / pageSize);
+
+    const news = await prisma.news.findMany({
+      take: pageSize,
+      skip: skip,
+      orderBy: {
+        [sortField]: sortOrder,
+      },
+      where: whereCondition, // Apply the condition to the news query
+    });
+
+    res.status(200).json({
+      news,
+      pagination: {
+        currentPage: parsedPage,
+        totalPages,
+        totalItems: totalNews,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    next(error);
+  }
 };
 
-  
+export const searchNews = async (req, res, next) => {
+  let { title, titleTh, category, page, pageSize } = SearchNewsQuerySchema.parse(req.query);
 
-  export const searchNews = async (req, res, next) => {
-    let { title, titleTh } = SearchNewsQuerySchema.parse(req.query);
-  
-    // Decode URL parameters
-    title = decodeURIComponent(title || '');
-    titleTh = decodeURIComponent(titleTh || '');
-  
-    try {
-      const news = await prisma.news.findFirst({
-        where: {
-          OR: [
-            { title: { contains: title } },
-          ],
+  // Decode URL parameters
+  title = decodeURIComponent(title || '');
+  titleTh = decodeURIComponent(titleTh || '');
+  category = decodeURIComponent(category || '');
+  page = parseInt(page) || 1;
+  pageSize = parseInt(pageSize) || ITEMS_PER_PAGE;
+
+  try {
+    let whereConditions = {};
+
+    if (title || titleTh) {
+      whereConditions.OR = [
+        { title: { contains: title } },
+        { titleTh: { contains: titleTh } },
+      ];
+    }
+
+    if (category) {
+      whereConditions.category = { contains: category };
+    }
+
+    const totalCount = await prisma.news.count({ where: whereConditions });
+
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const skip = (page - 1) * pageSize;
+
+    const news = await prisma.news.findMany({
+      where: whereConditions,
+      take: pageSize,
+      skip: skip,
+    });
+
+    if (news && news.length > 0) {
+      return res.status(200).json({
+        success: true,
+        data: news,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalItems: totalCount,
         },
       });
-  
-      if (news) {
-        return res.status(200).json({ success: true, data: news });
-      } else {
-        return res.status(404).json({ success: false, message: "News not found" });
-      }
-    } catch (error) {
-      console.error("Error in searchNews:", error);
-      return res.status(500).json({ success: false, message: "Internal Server Error" });
-    } finally {
-      await prisma.$disconnect();
+    } else {
+      return res.status(404).json({ success: false, message: "News not found" });
     }
-  };
+  } catch (error) {
+    console.error("Error in searchNews:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  } finally {
+    await prisma.$disconnect();
+  }
+};
+
+
+
+
   
   
   
@@ -99,7 +129,7 @@ export const createNews = async (req, res, next) => {
       titleTh,
       contentTh,
       editorUsername,
-    } = req.body;
+    } = createNewsSchema.parse(req.body);
   
     try {
       const news = await prisma.news.create({
@@ -133,7 +163,7 @@ export const createNews = async (req, res, next) => {
   // UPDATE
 // UPDATE
 export const updateNews = async (req, res, next) => {
-    const { id } = req.params;
+    const { id } = idSchema.parse(req.params);
     const {
       category,
       title,
@@ -146,7 +176,7 @@ export const updateNews = async (req, res, next) => {
       titleTh,
       contentTh,
       editorUsername,
-    } = req.body;
+    } = updateNewsSchema.parse(req.body);
   
     try {
       const updatedNews = await prisma.news.update({
@@ -181,7 +211,7 @@ export const updateNews = async (req, res, next) => {
   // DELETE
 // DELETE
 export const deleteNews = async (req, res, next) => {
-    const { id } = req.params;
+    const { id } = idSchema.parse(req.params);
   
     try {
       await prisma.news.delete({
@@ -200,11 +230,10 @@ export const deleteNews = async (req, res, next) => {
 
   export const logView = async (req, res, next) => {
     try {
-      const { newsId } = req.body;
+      const { newsId,userIp } = logViewSchema.parse(req.body);
   
       // Check User-Agent and IP Address
       const userAgent = req.get('User-Agent');
-      const userIp = req.ip;
   
       // Check if this page has been viewed already
       const news = await prisma.news.findUnique({

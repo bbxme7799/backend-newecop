@@ -380,7 +380,7 @@ const checkAndUpdateCategory = async (url, expectedCategory) => {
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
-  cron.schedule("*/1 * * * *", async () => {
+  cron.schedule("*/30 * * * *", async () => {
     try {
       checkAndUpdateCategory('https://thehackernews.com/search/label/Cyber%20Attack', 'CyberAttack');
       checkAndUpdateCategory('https://thehackernews.com/search/label/Vulnerability', 'Vulnerability');   
