@@ -38,6 +38,8 @@ model View {
   userAgent String
   newsId    Int
   news      News    @relation(fields: [newsId], references: [id])
+  created_at        DateTime            @default(now()) @db.Timestamp(6)
+  updated_at        DateTime            @updatedAt
 }
 
 

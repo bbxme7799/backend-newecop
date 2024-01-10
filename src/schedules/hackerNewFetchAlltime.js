@@ -5,24 +5,34 @@ import puppeteer from "puppeteer";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs/promises";
+import sharp from "sharp"
+
 dotenv.config();
 
-async function scrapeLinks(url) {
+const removeElements = async (page, selectors) => {
+  for (const selector of selectors) {
+    await page.evaluate((sel) => {
+      const elements = document.querySelectorAll(sel);
+      elements.forEach((element) => element.remove());
+    }, selector);
+  }
+};
+
+const scrapeLinks = async (url) => {
+  const unwantedUrl = 'https://thn.news'
   const browser = await puppeteer.launch({
     headless: 'new',
   });
   const page = await browser.newPage();
   await page.goto(url);
-  
-    // Scroll down 3 times, waiting for some time between scrolls
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => {
-        window.scrollBy(0, window.innerHeight);
-      });
-  
-      // Wait for a short time to allow content to load or for animations to complete
-      await page.waitForTimeout(1000);
-    }
+
+  // Scroll down 3 times, waiting for some time between scrolls
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+    // await page.waitForTimeout(1000);
+  }
 
   let hasNextPage = true;
   let allLinks = [];
@@ -31,18 +41,23 @@ async function scrapeLinks(url) {
     const links = await page.$$eval(".story-link", (anchors) =>
       anchors.map((anchor) => anchor.getAttribute("href"))
     );
-    allLinks = allLinks.concat(links);
+
+    // Filter out unwanted links
+    const filteredLinks = links.filter(link => !link.includes(unwantedUrl));
+
+    allLinks = allLinks.concat(filteredLinks);
     console.log("🚀 ~ file: hackerNewFetchAlltime.js:35 ~ scrapeLinks ~ allLinks:", allLinks);
-     // Scroll down 3 times, waiting for some time between scrolls
-     for (let i = 0; i < 3; i++) {
+
+    // Scroll down 3 times, waiting for some time between scrolls
+    for (let i = 0; i < 3; i++) {
       await page.evaluate(() => {
         window.scrollBy(0, window.innerHeight);
       });
-  
-      // Wait for a short time to allow content to load or for animations to complete
-      await page.waitForTimeout(1000);
+      // await page.waitForTimeout(1000);
     }
+
     const nextPageButton = await page.$("#Blog1_blog-pager-older-link");
+
     if (nextPageButton) {
       await page.waitForSelector("#Blog1_blog-pager-older-link");
       await Promise.all([
@@ -56,34 +71,35 @@ async function scrapeLinks(url) {
 
   await browser.close();
   return allLinks;
-}
+};
 
-async function downloadImage(imageUrl, folderPath) {
-  const imagePath = path.join(folderPath, path.basename(imageUrl));
+const downloadImage = async (imageUrl, folderPath) => {
   try {
     const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
-    await fs.writeFile(imagePath, Buffer.from(response.data));
-    return imagePath;
+    const webpBuffer = await sharp(response.data).webp().toBuffer();
+    const fileNameWithoutExtension = generateUniqueId();
+    const webpFilePath = path.join(folderPath, `${fileNameWithoutExtension}.webp`);
+    await fs.writeFile(webpFilePath, webpBuffer);
+    console.log(`Downloaded image: ${fileNameWithoutExtension}.webp`);
+    return `${fileNameWithoutExtension}.webp`;
   } catch (error) {
-    console.error(
-      `Failed to download image from ${imageUrl}: ${error.message}`
-    );
+    console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
+    return null;
   }
-}
+};
 
-async function scrapeArticleContent(link) {
+const scrapeArticleContent = async (link) => {
   const browser = await puppeteer.launch({
-    headless: "new", // Set to true for headless mode
+    headless: 'new',
   });
 
   try {
     const page = await browser.newPage();
     await page.goto(link);
 
-
-
     await page.waitForSelector(".story-title");
     await page.waitForSelector(".articlebody.clear.cf");
+
 
     const title = await page.evaluate(() => {
       const titleElement = document.querySelector(".story-title");
@@ -92,9 +108,7 @@ async function scrapeArticleContent(link) {
 
     const author = await page.evaluate(() => {
       const authorElements = document.querySelectorAll(".postmeta .author");
-      return authorElements.length > 1
-        ? authorElements[1].innerText.trim()
-        : "";
+      return authorElements.length > 1 ? authorElements[1].innerText.trim() : "";
     });
 
     const pTags = await page.evaluate(() => {
@@ -108,54 +122,45 @@ async function scrapeArticleContent(link) {
 
     const imgLinksInSeparator = await page.$$eval(
       ".separator a img",
-      (imgs) => {
-        return imgs
+      (imgs) =>
+        imgs
           .filter((_, index) => index === 0)
           .map((img) => {
             const parentAnchor = img.closest("a");
-            if (parentAnchor) {
-              return img.getAttribute("src");
-            }
+            return parentAnchor ? img.getAttribute("src") : null;
           })
-          .filter((src) => src);
-      }
+          .filter((src) => src)
     );
 
     const moduleDir = path.dirname(new URL(import.meta.url).pathname);
-    const imageFolder = path.join("images"); // Change this path accordingly
+    const imageFolder = path.join("images");
 
     const downloadedImages = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {
         try {
-          const downloadedImagePath = await downloadImage(
-            imageUrl,
-            imageFolder
-          );
-          if (downloadedImagePath) {
-            console.log(`Downloaded image: ${downloadedImagePath}`);
-            return downloadedImagePath;
+          const downloadedImageFilename = await downloadImage(imageUrl, imageFolder);
+          if (downloadedImageFilename) {
+            console.log(`Downloaded image: ${downloadedImageFilename}`);
+            return downloadedImageFilename;
           } else {
             console.error(`Failed to download image from ${imageUrl}`);
             return null;
           }
         } catch (error) {
-          console.error(
-            `Failed to download image from ${imageUrl}: ${error.message}`
-          );
+          console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
           return null;
         }
       })
     );
 
-    // Filter out only fulfilled promises (successful downloads)
     const successfulDownloads = downloadedImages
-      .filter((result) => result.status === "fulfilled")
-      .map((result) => {
-        const imagePath = result.value;
-        const imageName = path.basename(imagePath);
-        console.log(`Downloaded image: ${imageName}`);
-        return imageName;
-      });
+  .filter((result) => result.status === "fulfilled")
+  .map((result) => {
+    const fileName = path.basename(result.value);
+    const parsed = path.parse(fileName);
+    return parsed.name; // นี่คือชื่อไฟล์โดยไม่รวมนามสกุล
+  });
+
 
     console.log("Downloaded Images:", successfulDownloads);
 
@@ -164,16 +169,11 @@ async function scrapeArticleContent(link) {
 
       if (!contentElement) return "";
 
-      const checkTwoElements = contentElement.querySelectorAll(
-        ".check_two.clear.babsi"
-      );
-      checkTwoElements.forEach((element) => element.remove());
+      const elementsToRemove = [
+        ...contentElement.querySelectorAll(".check_two.clear.babsi, .cf.note-b, .editor-rtfLink"),
+      ];
 
-      const CfElements = contentElement.querySelectorAll(".cf.note-b");
-      CfElements.forEach((element) => element.remove());
-
-      const editorElements = contentElement.querySelectorAll(".editor-rtfLink");
-      editorElements.forEach((element) => element.remove());
+      elementsToRemove.forEach((element) => element.remove());
 
       return contentElement.textContent;
     });
@@ -181,7 +181,7 @@ async function scrapeArticleContent(link) {
     await browser.close();
 
     return {
-      title: title,
+      title,
       date,
       author,
       pTags,
@@ -191,7 +191,6 @@ async function scrapeArticleContent(link) {
   } catch (error) {
     console.error("An error occurred:", error.message);
     await browser.close();
-    // Return default values or an empty object in case of an error
     return {
       title: "",
       date: "",
@@ -201,42 +200,34 @@ async function scrapeArticleContent(link) {
       contentEn: "",
     };
   }
-}
+};
 
-async function saveAllLinks() {
-  const homepageLinks = await scrapeLinks("https://thehackernews.com/");
-  const dataBreachLinks = await scrapeLinks(
-    "https://thehackernews.com/search/label/data%20breach"
-  );
-  const cyberAttackLinks = await scrapeLinks(
-    "https://thehackernews.com/search/label/Cyber%20Attack"
-  );
-  const vulnerabilityLinks = await scrapeLinks(
-    "https://thehackernews.com/search/label/Vulnerability"
-  );
+const saveAllLinks = async () => {
+  // const homepageLinks = await scrapeLinks("https://thehackernews.com/");
+  const dataBreachLinks = await scrapeLinks("https://thehackernews.com/search/label/data%20breach");
+  const cyberAttackLinks = await scrapeLinks("https://thehackernews.com/search/label/Cyber%20Attack");
+  const vulnerabilityLinks = await scrapeLinks("https://thehackernews.com/search/label/Vulnerability");
 
   const allLinks = {
-    Home: homepageLinks,
+    // Home: homepageLinks,
     "Data Breach": dataBreachLinks,
     "Cyber Attack": cyberAttackLinks,
     Vulnerability: vulnerabilityLinks,
   };
 
-  fs.writeFileSync("all_links.json", JSON.stringify(allLinks, null, 2));
+  await  fs.writeFile("src/schedules/all_links.json", JSON.stringify(allLinks, null, 2));
   console.log("All links saved to all_links.json");
-}
-
-// Add this utility function to generate a unique ID
-const generateUniqueId = () => {
-  return "_" + Math.random().toString(36).substr(2, 9);
 };
 
-async function scrapeAndSaveArticles() {
-  const allLinks = JSON.parse(await fs.readFile("all_links.json", "utf8"));
+const generateUniqueId = () => "_" + Math.random().toString(36).substr(2, 9);
+
+const scrapeAndSaveArticles = async () => {
+  const allLinks = JSON.parse(await fs.readFile("src/schedules/all_links.json", "utf8"));
+  console.log("🚀 ~ scrapeAndSaveArticles ~ allLinks:", allLinks);
   let index = 1;
 
   try {
-    await fs.writeFile("article_data.json", "["); // Start JSON array
+    const articles = [];
 
     for (const category in allLinks) {
       const categoryLinks = allLinks[category];
@@ -255,58 +246,60 @@ async function scrapeAndSaveArticles() {
           ref: link,
         };
 
-        const formattedData = JSON.stringify(data, null, 2);
-        await fs.appendFile("article_data.json", `${formattedData},\n`);
-
+        articles.push(data);
         console.dir(data, { depth: null, compact: false });
-        console.log(`Article ${index} saved to article_data.json`);
+        console.log(`Article ${index} saved to articles array`);
         index++;
       }
     }
 
-    await fs.appendFile("article_data.json", "]"); // End JSON array
+    await fs.writeFile("src/schedules/article_data.json", JSON.stringify(articles, null, 2));
     console.log("All articles saved to article_data.json");
   } catch (error) {
     console.error("An error occurred:", error.message);
   }
-}
+};
 
-async function translateText(text, targetLanguage = "th") {
+const translateText = async (text, targetLanguage = "th") => {
   const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
   const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
 
   const textChunks = splitTextIntoChunks(text, 5000);
 
-  const translations = await Promise.all(textChunks.map(async (chunk) => {
-    const params = {
-      key: apiKey,
-      q: chunk,
-      target: targetLanguage
-    };
+  try {
+    const translations = await Promise.all(
+      textChunks.map(async (chunk) => {
+        const params = {
+          key: apiKey,
+          q: chunk,
+          target: targetLanguage,
+        };
 
-    try {
-      const response = await axios.post(translateApiUrl, null, { params });
-      return response.data.data.translations[0].translatedText;
-    } catch (error) {
-      console.error('Translation error:', error.message);
-      throw error;
-    }
-  }));
+        const response = await axios.post(translateApiUrl, null, { params });
+        return response.data.data.translations[0].translatedText;
+      })
+    );
 
-  const translatedText = translations.join(' ');
+    const translatedText = translations.join(" ");
+    console.log("🚀 ~ translateText ~ translatedText:", translatedText)
+    return translatedText;
+  } catch (error) {
+    console.error("Translation error:", error.message);
+    throw error;
+  }
+};
 
-  return translatedText;
-}
 
-function splitTextIntoChunks(text, chunkSize) {
-  const regex = new RegExp(`.{1,${chunkSize}}`, 'g');
+const splitTextIntoChunks = (text, chunkSize) => {
+  const regex = new RegExp(`.{1,${chunkSize}}`, "g");
   return text.match(regex) || [];
-}
+};
 
-async function translateThai() {
-  const rawData = await fs.readFile("article_data.json", "utf8");
+const translateThai = async () => {
+  const rawData = await fs.readFile("src/schedules/article_data.json", "utf8");
   const articles = JSON.parse(rawData);
-  const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
+  console.log("🚀 ~ translateThai ~ articles:", articles)
+  const translatedArticles = [];
 
   for (const article of articles) {
     const titleEn = article.title;
@@ -318,38 +311,31 @@ async function translateThai() {
     article.titleTh = titleTh;
     article.contentTh = contentTh;
 
-    // ทำการบันทึกทันทีหลังจากแปลแต่ละบทความ
-    await fs.writeFile("article_data.json", JSON.stringify(articles, null, 2), "utf8");
+    translatedArticles.push(article);
   }
 
+  await fs.writeFile("src/schedules/article_data.json", JSON.stringify(translatedArticles, null, 2), "utf8");
   console.log("Translation completed. Translated data saved to article_data.json");
-}
+};
 
 
-
-async function JsonPushToDB() {
+const JsonPushToDB = async () => {
   const prisma = new PrismaClient();
 
   try {
-    // Read the JSON file
-    const rawData = await fs.readFile('src/schedules/article_data.json', 'utf-8');
-
+    const rawData = await fs.readFile("src/schedules/article_data.json", "utf-8");
     const articles = JSON.parse(rawData);
 
-    // Iterate over articles and create entries in the database
     for (const article of articles) {
-      // Join imgLinks array into a single string and remove square brackets
-      const imgLinksString = article.imgLinks.join(', ').replace(/[\[\]]/g, '');
-
-      // // Check if a record with the same title and date exists
+      const imgLinksString = article.imgLinks.join(", ").replace(/[\[\]]/g, "");
       const existingArticle = await prisma.news.findFirst({
         where: {
           title: article.title,
           date: article.date,
         },
       });
+
       if (!existingArticle) {
-        // If no matching record exists, create a new entry
         await prisma.news.create({
           data: {
             category: article.category,
@@ -369,32 +355,37 @@ async function JsonPushToDB() {
       }
     }
 
-    console.log('Data import successful');
+    console.log("Data import successful");
   } catch (error) {
-    console.error('Error importing data:', error);
+    console.error("Error importing data:", error);
   } finally {
     await prisma.$disconnect();
   }
-}
+};
 
+let isTaskRunning = false;
 
-const prisma = new PrismaClient();
+const startTask = async () => {
+  if (!isTaskRunning) {
+    isTaskRunning = true;
+    try {
+      // await saveAllLinks();
+      // await scrapeAndSaveArticles();
+      await translateThai();
+      // await JsonPushToDB();
+    } catch (error) {
+      console.error("An error occurred:", error.message);
+    } finally {
+      isTaskRunning = false;
+    }
+  } else {
+    console.log("Task is already running. Skipping...");
+  }
+};
+
 export const hackerNewFetchAlltime = async () => {
-  //every 1 minitue
+  // every 1 minute
   cron.schedule("*/1 * * * *", async () => {
-  // cron.schedule("0 0 * * *", async () => {
-
-
-// Usage
-async function scrapeAndSaveAll() {
-  // await saveAllLinks();
-  // await scrapeAndSaveArticles();
-  // await translateThai();
-  await JsonPushToDB();
-}
-
-
-scrapeAndSaveAll();
-
+    await startTask();
   });
 };
