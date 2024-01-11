@@ -59,7 +59,7 @@ export const searchNews = async (req, res, next) => {
   // Decode URL parameters
   title = decodeURIComponent(title || '');
   titleTh = decodeURIComponent(titleTh || '');
-  category = decodeURIComponent(category || '');
+  // category = decodeURIComponent(category || '');
   page = parseInt(page) || 1;
   pageSize = parseInt(pageSize) || ITEMS_PER_PAGE;
 
@@ -67,7 +67,7 @@ export const searchNews = async (req, res, next) => {
     let whereConditions = {};
 
     if (title || titleTh) {
-      whereConditions.OR = [
+      whereConditions.AND = [
         { title: { contains: title } },
         { titleTh: { contains: titleTh } },
       ];

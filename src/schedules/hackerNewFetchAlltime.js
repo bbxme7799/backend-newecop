@@ -371,8 +371,8 @@ const startTask = async () => {
     try {
       // await saveAllLinks();
       // await scrapeAndSaveArticles();
-      await translateThai();
-      // await JsonPushToDB();
+      // await translateThai();
+      await JsonPushToDB();
     } catch (error) {
       console.error("An error occurred:", error.message);
     } finally {

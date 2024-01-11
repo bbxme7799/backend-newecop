@@ -121,34 +121,29 @@ const scrapeArticleData = async (browser, link) => {
     const downloadedImages = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {
         try {
-          const downloadedImagePath = await downloadImage(
-            imageUrl,
-            imageFolder
-          );
-          if (downloadedImagePath) {
-            console.log(`Downloaded image: ${downloadedImagePath}`);
-            return downloadedImagePath;
+          const downloadedImageFilename = await downloadImage(imageUrl, imageFolder);
+          if (downloadedImageFilename) {
+            console.log(`Downloaded image: ${downloadedImageFilename}`);
+            return downloadedImageFilename;
           } else {
             console.error(`Failed to download image from ${imageUrl}`);
             return null;
           }
         } catch (error) {
-          console.error(
-            `Failed to download image from ${imageUrl}: ${error.message}`
-          );
+          console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
           return null;
         }
       })
     );
 
     const successfulDownloads = downloadedImages
-      .filter((result) => result.status === "fulfilled")
-      .map((result) => {
-        const imagePath = result.value;
-        const imageName = path.basename(imagePath);
-        console.log(`Downloaded image: ${imageName}`);
-        return imageName;
-      });
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => {
+      const fileName = path.basename(result.value);
+      const parsed = path.parse(fileName);
+      return parsed.name; // นี่คือชื่อไฟล์โดยไม่รวมนามสกุล
+    });
+  
 
     console.log("Downloaded Images:", successfulDownloads);
 
@@ -264,21 +259,16 @@ const saveAllToJson = async (allData) => {
 };
 
 const downloadImage = async (imageUrl, folderPath) => {
-  const imagePath = path.join(folderPath, path.basename(imageUrl));
-
   try {
-    const response = await axios.get(imageUrl, {
-      responseType: "arraybuffer",
-    });
-
-    await fs.writeFile(imagePath, Buffer.from(response.data));
-
-    console.log(`Downloaded image: ${imagePath}`);
-    return imagePath;
+    const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+    const webpBuffer = await sharp(response.data).webp().toBuffer();
+    const fileNameWithoutExtension = generateUniqueId();
+    const webpFilePath = path.join(folderPath, `${fileNameWithoutExtension}.webp`);
+    await fs.writeFile(webpFilePath, webpBuffer);
+    console.log(`Downloaded image: ${fileNameWithoutExtension}.webp`);
+    return `${fileNameWithoutExtension}.webp`;
   } catch (error) {
-    console.error(
-      `Failed to download image from ${imageUrl}: ${error.message}`
-    );
+    console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
     return null;
   }
 };
