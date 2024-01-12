@@ -21,7 +21,7 @@ const removeElements = async (page, selectors) => {
 const scrapeLinks = async (url) => {
   const unwantedUrl = 'https://thn.news'
   const browser = await puppeteer.launch({
-    headless: 'new',
+    headless: false,
   });
   const page = await browser.newPage();
   await page.goto(url);
@@ -90,35 +90,27 @@ const downloadImage = async (imageUrl, folderPath) => {
 
 const scrapeArticleContent = async (link) => {
   const browser = await puppeteer.launch({
-    headless: 'new',
+    headless: false,
   });
 
   try {
     const page = await browser.newPage();
-    await page.goto(link);
+    await page.goto(link, { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector(".story-title");
-    await page.waitForSelector(".articlebody.clear.cf");
-
-
-    const title = await page.evaluate(() => {
-      const titleElement = document.querySelector(".story-title");
-      return titleElement ? titleElement.innerText : "";
+    await page.evaluate(() => {
+      const bottomElement = document.body.lastElementChild;
+      if (bottomElement) {
+        bottomElement.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+      }
     });
-
-    const author = await page.evaluate(() => {
-      const authorElements = document.querySelectorAll(".postmeta .author");
-      return authorElements.length > 1 ? authorElements[1].innerText.trim() : "";
-    });
-
-    const pTags = await page.evaluate(() => {
-      const pTagsElement = document.querySelector(".postmeta .p-tags");
-      return pTagsElement ? pTagsElement.innerText.trim() : "";
-    });
-
-    const postmetaElement = await page.$(".postmeta");
-    const dateElement = await postmetaElement.$(".author");
-    const date = await dateElement.evaluate((node) => node.textContent.trim());
+    
+    await page.waitForTimeout(1000);
+    const [title, author, pTags, date] = await Promise.all([
+      page.waitForSelector(".story-title").then(() => page.$eval(".story-title", (titleElement) => titleElement.innerText)),
+      page.waitForSelector(".postmeta .author").then(() => page.$eval(".postmeta .author", (authorElement) => authorElement.innerText.trim())),
+      page.waitForSelector(".postmeta .p-tags").then(() => page.$eval(".postmeta .p-tags", (pTagsElement) => pTagsElement.innerText.trim())),
+      page.waitForSelector(".postmeta .author").then(() => page.$eval(".postmeta .author", (dateElement) => dateElement.textContent.trim())),
+    ]);
 
     const imgLinksInSeparator = await page.$$eval(
       ".separator a img",
@@ -132,13 +124,10 @@ const scrapeArticleContent = async (link) => {
           .filter((src) => src)
     );
 
-    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
-    const imageFolder = path.join("images");
-
-    const downloadedImages = await Promise.allSettled(
+    const successfulDownloads = await Promise.allSettled(
       imgLinksInSeparator.map(async (imageUrl) => {
         try {
-          const downloadedImageFilename = await downloadImage(imageUrl, imageFolder);
+          const downloadedImageFilename = await downloadImage(imageUrl, "images");
           if (downloadedImageFilename) {
             console.log(`Downloaded image: ${downloadedImageFilename}`);
             return downloadedImageFilename;
@@ -153,39 +142,37 @@ const scrapeArticleContent = async (link) => {
       })
     );
 
-    const successfulDownloads = downloadedImages
-  .filter((result) => result.status === "fulfilled")
-  .map((result) => {
-    const fileName = path.basename(result.value);
-    const parsed = path.parse(fileName);
-    return parsed.name; // นี่คือชื่อไฟล์โดยไม่รวมนามสกุล
-  });
-
-
-    console.log("Downloaded Images:", successfulDownloads);
-
     const articleContent = await page.evaluate(() => {
-      const contentElement = document.querySelector(".articlebody.clear.cf");
-
-      if (!contentElement) return "";
-
-      const elementsToRemove = [
-        ...contentElement.querySelectorAll(".check_two.clear.babsi, .cf.note-b, .editor-rtfLink"),
-      ];
-
-      elementsToRemove.forEach((element) => element.remove());
-
-      return contentElement.textContent;
+      const mainBoxElement = document.querySelector('.main-box.clear');
+  
+      if (!mainBoxElement) return "";
+  
+      // Remove unnecessary elements
+      const unnecessaryElements = mainBoxElement.querySelectorAll('.check_two.clear.babsi, .cf.note-b, .editor-rtfLink, .right-box');
+      unnecessaryElements.forEach((element) => element.remove());
+  
+      // Extract text content from all paragraphs excluding <a> tags
+      const paragraphTexts = Array.from(mainBoxElement.querySelectorAll('p'), (p) => {
+        // Remove <a> tags from the innerHTML
+        const withoutATags = p.innerHTML.replace(/<a\b[^>]*>.*?<\/a>/g, '');
+        return `<p>${withoutATags.trim()}</p>`;
+      });
+  
+      // Concatenate paragraphs into a single string
+      return paragraphTexts.join('');
     });
 
-    await browser.close();
+    
+    // await browser.close();
 
     return {
       title,
       date,
       author,
       pTags,
-      imgLinksInSeparator: successfulDownloads,
+      imgLinksInSeparator: successfulDownloads
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => path.basename(result.value)),
       contentEn: articleContent,
     };
   } catch (error) {
@@ -229,9 +216,7 @@ const scrapeAndSaveArticles = async () => {
   try {
     const articles = [];
 
-    for (const category in allLinks) {
-      const categoryLinks = allLinks[category];
-
+    for (const [category, categoryLinks] of Object.entries(allLinks)) {
       for (const link of categoryLinks) {
         const articleContent = await scrapeArticleContent(link);
         const data = {
@@ -248,8 +233,7 @@ const scrapeAndSaveArticles = async () => {
 
         articles.push(data);
         console.dir(data, { depth: null, compact: false });
-        console.log(`Article ${index} saved to articles array`);
-        index++;
+        console.log(`Article ${articles.length} saved to articles array`);
       }
     }
 
@@ -370,9 +354,9 @@ const startTask = async () => {
     isTaskRunning = true;
     try {
       // await saveAllLinks();
-      // await scrapeAndSaveArticles();
+      await scrapeAndSaveArticles();
       // await translateThai();
-      await JsonPushToDB();
+      // await JsonPushToDB();
     } catch (error) {
       console.error("An error occurred:", error.message);
     } finally {

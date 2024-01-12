@@ -4,6 +4,7 @@ import path from "path";
 import axios from "axios";
 import fs from "fs/promises"; // Assuming you are using Node.js version 14.0.0 or later
 import { PrismaClient } from "@prisma/client";
+import sharp from "sharp";
 
 const prisma = new PrismaClient();
 const compareDates = (dateTimeText) => {
@@ -76,6 +77,12 @@ const scrapeArticleData = async (browser, link) => {
     // Wait for a short time to allow content to load or for animations to complete
     await page.waitForTimeout(1000);
   }
+  await removeElements(page, ".icon-font.icon-calendar");
+  await removeElements(page, ".right-box");
+  await removeElements(page, ".below-post-box.cf");
+  await removeElements(page, ".footer-stuff.clear.cf");
+  await removeElements(page, ".email-box");
+  await removeElements(page, ".header.clear");
 
     await page.waitForSelector(".story-title");
     await page.waitForSelector(".articlebody.clear.cf");
@@ -147,24 +154,26 @@ const scrapeArticleData = async (browser, link) => {
 
     console.log("Downloaded Images:", successfulDownloads);
 
-    const articleContent = await page.evaluate(() => {
-      const contentElement = document.querySelector(".articlebody.clear.cf");
-
-      if (!contentElement) return "";
-
-      const checkTwoElements = contentElement.querySelectorAll(
-        ".check_two.clear.babsi"
-      );
-      checkTwoElements.forEach((element) => element.remove());
-
-      const CfElements = contentElement.querySelectorAll(".cf.note-b");
-      CfElements.forEach((element) => element.remove());
-
-      const editorElements = contentElement.querySelectorAll(".editor-rtfLink");
-      editorElements.forEach((element) => element.remove());
-
-      return contentElement.textContent;
+    const mainBoxContent = await page.evaluate(() => {
+      const mainBoxElement = document.querySelector('.main-box.clear');
+  
+      if (!mainBoxElement) return "";
+  
+      // Remove unnecessary elements
+      const unnecessaryElements = mainBoxElement.querySelectorAll('.check_two.clear.babsi, .cf.note-b, .editor-rtfLink');
+      unnecessaryElements.forEach((element) => element.remove());
+  
+      // Extract text content from all paragraphs excluding <a> tags
+      const paragraphTexts = Array.from(mainBoxElement.querySelectorAll('p'), (p) => {
+        // Remove <a> tags from the innerHTML
+        const withoutATags = p.innerHTML.replace(/<a\b[^>]*>.*?<\/a>/g, '');
+        return `<p>${withoutATags.trim()}</p>`;
+      });
+  
+      // Concatenate paragraphs into a single string
+      return paragraphTexts.join('');
     });
+  
 
     const articleData = {
       id: generateUniqueId(),
@@ -174,7 +183,7 @@ const scrapeArticleData = async (browser, link) => {
       author,
       pTags,
       imgLinks: successfulDownloads,
-      contentEn: articleContent,
+      contentEn: mainBoxContent,
       ref: link,
     };
 
@@ -227,7 +236,14 @@ const saveAllToJson = async (allData) => {
 
     // File exists, read existing JSON data
     const existingData = await fs.readFile(jsonFilePath, "utf-8");
-    const jsonData = JSON.parse(existingData);
+
+    let jsonData;
+    try {
+      jsonData = JSON.parse(existingData);
+    } catch (parseError) {
+      console.error("Error parsing existing JSON data:", parseError.message);
+      jsonData = [];
+    }
 
     // Check for duplicate data
     const isDuplicate = jsonData.some((existingItem) =>
@@ -249,7 +265,7 @@ const saveAllToJson = async (allData) => {
       console.log("Duplicate data found, not saving to the file.");
     }
   } catch (error) {
-    // File does not exist, create a new JSON file
+    // File does not exist or other file-related error
     const jsonData = allData;
 
     // Write the array to the file
@@ -257,6 +273,7 @@ const saveAllToJson = async (allData) => {
     console.log(`Scraped data has been saved to ${jsonFilePath}`);
   }
 };
+
 
 const downloadImage = async (imageUrl, folderPath) => {
   try {
@@ -320,11 +337,11 @@ const updateCategoryByTitle = async (title, newCategory) => {
     if (existingArticle) {
       if (existingArticle.category !== newCategory) {
         await prisma.news.update({
-          where: { title },
+          where: { id: existingArticle.id }, // Include the id field
           data: { category: newCategory },
         });
 
-        console.log(`Category updated for article "${title}"`);
+        // console.log(`Category updated for article "${title}"`);
       } else {
         console.log(`Category is already "${newCategory}" for article "${title}"`);
       }
@@ -335,6 +352,7 @@ const updateCategoryByTitle = async (title, newCategory) => {
     console.error(`Error updating category for article "${title}":`, error);
   }
 };
+
 
 
 const checkAndUpdateCategory = async (url, expectedCategory) => {
@@ -349,7 +367,7 @@ const checkAndUpdateCategory = async (url, expectedCategory) => {
       const titleElements = document.querySelectorAll('.home-title');
       return Array.from(titleElements, (element) => element.textContent);
     });
-    console.log("🚀 ~ file: hackerNewFetchToday.js:492 ~ titles ~ titles:", titles)
+    // console.log("🚀 ~ file: hackerNewFetchToday.js:492 ~ titles ~ titles:", titles)
 
     for (const title of titles) {
       const existingArticle = await prisma.news.findFirst({
@@ -440,25 +458,25 @@ export const hackerNewFetchToday = async () => {
           await saveAllToJson(scrapedData);
           try {
             const jsonFilePath = path.join("src/schedules", "scrapedData.json");
-            // อ่านข้อมูลจากไฟล์ JSON
             const jsonData = await fs.readFile(jsonFilePath, "utf-8");
-
-            // แปลงข้อมูล JSON เป็น Object
             const scrapedData = JSON.parse(jsonData);
-
-            // เพิ่มข้อมูลลงใน MySQL ด้วย Prisma
-            for (const articleData of scrapedData) {
+          
+            // สร้าง Promise array โดยให้แต่ละ Promise เป็นการทำงานในลูป
+            const promises = scrapedData.map(async (articleData) => {
               const imgLinksString = articleData.imgLinks.join(', ').replace(/[\[\]]/g, '');
-              // ตรวจสอบว่าข้อมูลซ้ำหรือไม่
+          
               const existingArticle = await prisma.news.findFirst({
                 where: {
-                  title: articleData.title,
-                  date: articleData.date,
+                  title: {
+                    equals: articleData.title,
+                  },
+                  date: {
+                    equals: articleData.date,
+                  },
                 },
               });
-
+          
               if (!existingArticle) {
-                // ถ้าไม่ซ้ำ, เพิ่มข้อมูลลงใน MySQL
                 await prisma.news.create({
                   data: {
                     category: articleData.category,
@@ -471,7 +489,6 @@ export const hackerNewFetchToday = async () => {
                     ref: articleData.ref,
                     titleTh: articleData.titleTh,
                     contentTh: articleData.contentTh,
-                    // ตรวจสอบว่าข้อมูล editorUsername มีค่าหรือไม่ ถ้ามีให้เพิ่ม editor ลงในข้อมูล
                     ...(articleData.editorUsername && {
                       editor: {
                         connect: { username: articleData.editorUsername },
@@ -479,22 +496,21 @@ export const hackerNewFetchToday = async () => {
                     }),
                   },
                 });
-
-                console.log(
-                  `ข้อมูล "${articleData.title}" ได้ถูกเพิ่มลงใน MySQL แล้ว`
-                );
+          
+                console.log(`ข้อมูล "${articleData.title}" ได้ถูกเพิ่มลงใน MySQL แล้ว`);
               } else {
-                console.log(
-                  `ข้อมูล "${articleData.title}" มีอยู่ใน MySQL แล้ว ไม่ได้ทำการเพิ่ม`
-                );
+                console.log(`ข้อมูล "${articleData.title}" มีอยู่ใน MySQL แล้ว`);
               }
-            }
+            });
+          
+            // รอให้ทุก Promise เสร็จสิ้น
+            await Promise.all(promises);
           } catch (error) {
             console.error("เกิดข้อผิดพลาดในการอ่านไฟล์ JSON:", error);
           } finally {
-            // ปิดการเชื่อมต่อ Prisma Client เมื่อเสร็จสิ้น
             await prisma.$disconnect();
           }
+          
         } else {
           console.log("No elements with class 'story-link' found.");
         }
