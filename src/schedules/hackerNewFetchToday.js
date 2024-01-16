@@ -5,6 +5,7 @@ import axios from "axios";
 import fs from "fs/promises"; // Assuming you are using Node.js version 14.0.0 or later
 import { PrismaClient } from "@prisma/client";
 import sharp from "sharp";
+import cheerio from 'cheerio';
 
 const prisma = new PrismaClient();
 const compareDates = (dateTimeText) => {
@@ -50,183 +51,146 @@ const compareDates = (dateTimeText) => {
   }
 };
 
-const removeElements = async (page, selector) => {
-  await page.evaluate((sel) => {
-    const elements = document.querySelectorAll(sel);
-    elements.forEach((element) => element.remove());
-  }, selector);
-};
 
 // Add this utility function to generate a unique ID
 const generateUniqueId = () => {
   return "_" + Math.random().toString(36).substr(2, 9);
 };
 
-const scrapeArticleData = async (browser, link) => {
+const scrapeArticleData = async (link) => {
   try {
-    const page = await browser.newPage();
-    await page.goto(link);
+    const response = await axios.get(link);
+    const $ = cheerio.load(response.data);
 
+    await simulateScrolling($);
 
-   // Scroll down 3 times, waiting for some time between scrolls
-   for (let i = 0; i < 3; i++) {
-    await page.evaluate(() => {
-      window.scrollBy(0, window.innerHeight);
-    });
+    removeUnwantedElements($);
 
-    // Wait for a short time to allow content to load or for animations to complete
-    await page.waitForTimeout(1000);
-  }
-  await removeElements(page, ".icon-font.icon-calendar");
-  await removeElements(page, ".right-box");
-  await removeElements(page, ".below-post-box.cf");
-  await removeElements(page, ".footer-stuff.clear.cf");
-  await removeElements(page, ".email-box");
-  await removeElements(page, ".header.clear");
-
-    await page.waitForSelector(".story-title");
-    await page.waitForSelector(".articlebody.clear.cf");
-
-    const title = await page.evaluate(() => {
-      const titleElement = document.querySelector(".story-title");
-      return titleElement ? titleElement.innerText : "";
-    });
-
-    const author = await page.evaluate(() => {
-      const authorElements = document.querySelectorAll(".postmeta .author");
-      return authorElements.length > 1
-        ? authorElements[1].innerText.trim()
-        : "";
-    });
-
-    const pTags = await page.evaluate(() => {
-      const pTagsElement = document.querySelector(".postmeta .p-tags");
-      return pTagsElement ? pTagsElement.innerText.trim() : "";
-    });
-
-    const postmetaElement = await page.$(".postmeta");
-    const dateElement = await postmetaElement.$(".author");
-    const date = await dateElement.evaluate((node) => node.textContent.trim());
-
-    const imgLinksInSeparator = await page.$$eval(
-      ".separator a img",
-      (imgs) => {
-        return imgs
-          .filter((_, index) => index === 0)
-          .map((img) => {
-            const parentAnchor = img.closest("a");
-            if (parentAnchor) {
-              return img.getAttribute("src");
-            }
-          })
-          .filter((src) => src);
-      }
-    );
-
-    const imageFolder = path.join("images"); // Change this path accordingly
-
-    const downloadedImages = await Promise.allSettled(
-      imgLinksInSeparator.map(async (imageUrl) => {
-        try {
-          const downloadedImageFilename = await downloadImage(imageUrl, imageFolder);
-          if (downloadedImageFilename) {
-            console.log(`Downloaded image: ${downloadedImageFilename}`);
-            return downloadedImageFilename;
-          } else {
-            console.error(`Failed to download image from ${imageUrl}`);
-            return null;
-          }
-        } catch (error) {
-          console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
-          return null;
-        }
-      })
-    );
-
-    const successfulDownloads = downloadedImages
-    .filter((result) => result.status === "fulfilled")
-    .map((result) => {
-      const fileName = path.basename(result.value);
-      const parsed = path.parse(fileName);
-      return parsed.name; // นี่คือชื่อไฟล์โดยไม่รวมนามสกุล
-    });
-  
-
-    console.log("Downloaded Images:", successfulDownloads);
-
-    const mainBoxContent = await page.evaluate(() => {
-      const mainBoxElement = document.querySelector('.main-box.clear');
-  
-      if (!mainBoxElement) return "";
-  
-      // Remove unnecessary elements
-      const unnecessaryElements = mainBoxElement.querySelectorAll('.check_two.clear.babsi, .cf.note-b, .editor-rtfLink');
-      unnecessaryElements.forEach((element) => element.remove());
-  
-      // Extract text content from all paragraphs excluding <a> tags
-      const paragraphTexts = Array.from(mainBoxElement.querySelectorAll('p'), (p) => {
-        // Remove <a> tags from the innerHTML
-        const withoutATags = p.innerHTML.replace(/<a\b[^>]*>.*?<\/a>/g, '');
-        return `<p>${withoutATags.trim()}</p>`;
-      });
-  
-      // Concatenate paragraphs into a single string
-      return paragraphTexts.join('');
-    });
-  
-
-    const articleData = {
-      id: generateUniqueId(),
-      category: "Home",
-      title,
-      date,
-      author,
-      pTags,
-      imgLinks: successfulDownloads,
-      contentEn: mainBoxContent,
-      ref: link,
-    };
-
-    console.log("Scraped Article Data:", articleData);
-
-    // อ่านข้อมูลจากไฟล์ scrapedData.json
+    const { title, author, pTags, date, imgLinksInSeparator } = extractArticleInfo($);
+    
     const jsonFilePath = path.join("src/schedules", "scrapedData.json");
-       // Check if the file exists
-       await fs.access(jsonFilePath);
+    const jsonData = await readJsonFile(jsonFilePath);
 
-       // File exists, read existing JSON data
-       const existingData = await fs.readFile(jsonFilePath, "utf-8");
-       const jsonData = JSON.parse(existingData);
-    // เช็คว่า articleData.title และ articleData.date มีอยู่ใน scrapedData หรือไม่
-      const isTitleExist = jsonData.some(data => data.title === articleData.title);
-      const isDateExist = jsonData.some(data => data.date === articleData.date);
+    const isTitleExist = jsonData.some(data => data.title === title);
+    const isDateExist = jsonData.some(data => data.date === date);
 
-      if (isTitleExist && isDateExist) {
-        console.log("Data already exists. Translation not needed.");
-      } else {
-        // Translate text
-        const translatedTitle = await translateText(articleData.title);
-        const translatedContent = await translateText(articleData.contentEn);
-      
-        const translatedArticleData = {
-          ...articleData,
-          titleTh: translatedTitle,
-          contentTh: translatedContent,
-        };
+    if (isTitleExist && isDateExist) {
+      console.log("Data already exists. Translation not needed.");
+    } else {
+      const imageFolder = path.join("images");
+      const successfulDownloads = await downloadImages(imgLinksInSeparator, imageFolder);
+
+      console.log("Downloaded Images:", successfulDownloads);
+
+      const mainBoxContent = extractMainBoxContent($);
+      const articleData = createArticleData(title, date, author, pTags, successfulDownloads, mainBoxContent, link);
+
+      console.log("Scraped Article Data:", articleData);
+
+      if (!isTitleExist || !isDateExist) {
+        const translatedArticleData = await translateArticleData(articleData);
         console.log("Translated Article Data:", translatedArticleData);
-
-
-        // Add the translated scraped data to the array
         scrapedData.push(translatedArticleData);
       }
-
-    
-    // await page.close();
+    }
   } catch (error) {
     console.error("An error occurred while scraping article data:", error);
   }
 };
 
+const simulateScrolling = async ($) => {
+  for (let i = 0; i < 3; i++) {
+    $('body').append('<div style="height:1000px;"></div>');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+};
+
+const removeUnwantedElements = ($) => {
+  $(".icon-font.icon-calendar, .right-box, .below-post-box.cf, .footer-stuff.clear.cf, .email-box, .header.clear").remove();
+};
+
+const extractArticleInfo = ($) => {
+  const title = $(".story-title").text().trim();
+  const author = $(".postmeta .author").eq(1).text().trim();
+  const pTags = $(".postmeta .p-tags").text().trim();
+  const date = $("meta[itemprop='datePublished']").attr("content").trim();
+  const imgLinksInSeparator = [];
+  const firstImgLink = $(".separator a img[data-src]").attr("data-src");
+
+  if (firstImgLink) {
+    imgLinksInSeparator.push(firstImgLink);
+  }
+
+  return { title, author, pTags, date, imgLinksInSeparator };
+};
+
+const readJsonFile = async (jsonFilePath) => {
+  await fs.access(jsonFilePath);
+  const existingData = await fs.readFile(jsonFilePath, "utf-8");
+  return JSON.parse(existingData);
+};
+
+const downloadImages = async (imgLinks, imageFolder) => {
+  const downloadedImages = await Promise.all(
+    imgLinks.map(async (imageUrl) => {
+      try {
+        const downloadedImageFilename = await downloadImage(imageUrl, imageFolder);
+        if (downloadedImageFilename) {
+          console.log(`Downloaded image: ${downloadedImageFilename}`);
+          return path.basename(downloadedImageFilename, path.extname(downloadedImageFilename));
+        } else {
+          console.error(`Failed to download image from ${imageUrl}`);
+          return null;
+        }
+      } catch (error) {
+        console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
+        return null;
+      }
+    })
+  );
+
+  return downloadedImages.filter((fileName) => fileName !== null);
+};
+
+const extractMainBoxContent = ($) => {
+  const mainBoxElement = $(".main-box.clear");
+
+  if (!mainBoxElement.length) return "";
+
+  mainBoxElement.find('.check_two.clear.babsi, .cf.note-b, .editor-rtfLink').remove();
+
+  const paragraphTexts = mainBoxElement.find('p').map((index, p) => {
+    const withoutATags = $(p).html().replace(/<a\b[^>]*>.*?<\/a>/g, '');
+    return `<p>${withoutATags.trim()}</p>`;
+  }).get();
+
+  return paragraphTexts.join('');
+};
+
+const createArticleData = (title, date, author, pTags, imgLinks, contentEn, ref) => {
+  return {
+    id: generateUniqueId(),
+    category: "Home",
+    title,
+    date,
+    author,
+    pTags,
+    imgLinks,
+    contentEn,
+    ref,
+  };
+};
+
+const translateArticleData = async (articleData) => {
+  const translatedTitle = await translateText(articleData.title);
+  const translatedContent = await translateText(articleData.contentEn);
+
+  return {
+    ...articleData,
+    titleTh: translatedTitle,
+    contentTh: translatedContent,
+  };
+};
 const saveAllToJson = async (allData) => {
   const jsonFilePath = path.join("src/schedules", "scrapedData.json");
 
@@ -289,6 +253,7 @@ const downloadImage = async (imageUrl, folderPath) => {
     return null;
   }
 };
+
 
 
 async function translateText(text, targetLanguage = "th") {
@@ -388,83 +353,54 @@ const checkAndUpdateCategory = async (url, expectedCategory) => {
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
-  cron.schedule("*/1 * * * *", async () => {
+  cron.schedule("*/15 * * * *", async () => {
     try {
+      const response = await axios.get("https://thehackernews.com/");
+      const $ = cheerio.load(response.data);
+
       checkAndUpdateCategory('https://thehackernews.com/search/label/Cyber%20Attack', 'CyberAttack');
-      checkAndUpdateCategory('https://thehackernews.com/search/label/Vulnerability', 'Vulnerability');   
-      const browser = await puppeteer.launch({ headless: "new" });
-      const page = await browser.newPage();
-      await page.waitForTimeout(1000);
-      await page.goto("https://thehackernews.com/");
-
-
-      
+      checkAndUpdateCategory('https://thehackernews.com/search/label/Vulnerability', 'Vulnerability');
 
       // Remove unwanted elements
-      await removeElements(page, ".icon-font.icon-calendar");
-      await removeElements(page, ".right-box");
-      await removeElements(page, ".below-post-box.cf");
-      await removeElements(page, ".footer-stuff.clear.cf");
-      await removeElements(page, ".email-box");
-      await removeElements(page, ".header.clear");
+      $(".icon-font.icon-calendar, .right-box, .below-post-box.cf, .footer-stuff.clear.cf, .email-box, .header.clear").remove();
 
-       // Scroll down 3 times, waiting for some time between scrolls
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => {
-        window.scrollBy(0, window.innerHeight);
-      });
-  
-      // Wait for a short time to allow content to load or for animations to complete
-      await page.waitForTimeout(1000);
-    }
+      // Scroll down 3 times, waiting for some time between scrolls
+      for (let i = 0; i < 3; i++) {
+        $('body').append('<div style="height:1000px;"></div>'); // simulate scrolling
+        await new Promise(resolve => setTimeout(resolve, 1000)); // wait for content to load or animations to complete
+      }
 
-      const dateTimeElement = await page.$(".h-datetime");
-      const dateTimeText = await (dateTimeElement
-        ? dateTimeElement.evaluate((node) => node.innerText)
-        : "");
-
+      const dateTimeText = $(".h-datetime").text().trim();
       const datesMatch = compareDates(dateTimeText);
 
       if (datesMatch) {
-        const storyLinkElements = await page.$$(".story-link");
         const matchedLinks = [];
 
-        for (const storyLinkElement of storyLinkElements) {
-          const linkHref = await storyLinkElement.evaluate((node) =>
-            node.getAttribute("href")
-          );
-          // console.log("🚀 linkHref:", linkHref)
-          const linkDateTimeElement = await storyLinkElement.$(".h-datetime");
-          const linkDateTimeText = await (linkDateTimeElement
-            ? linkDateTimeElement.evaluate((node) => node.innerText)
-            : "");
+        $(".story-link").each((index, storyLinkElement) => {
+          const linkHref = $(storyLinkElement).attr("href");
+          const linkDateTimeText = $(storyLinkElement).find(".h-datetime").text().trim();
           const linkDatesMatch = compareDates(linkDateTimeText);
 
           if (linkDatesMatch) {
             matchedLinks.push(linkHref);
-            // console.log(
-            //   "🚀 ~ file: hackerNewFetchToday.js:243 ~ cron.schedule ~ matchedLinks:",
-            //   matchedLinks
-            // );
           }
-        }
+        });
 
         if (matchedLinks.length > 0) {
           for (const matchedLink of matchedLinks) {
-            // console.log("🚀 matchedLink:", matchedLink)
-            await scrapeArticleData(browser, matchedLink);
+            await scrapeArticleData(matchedLink);
           }
-          
+
           await saveAllToJson(scrapedData);
+
           try {
             const jsonFilePath = path.join("src/schedules", "scrapedData.json");
             const jsonData = await fs.readFile(jsonFilePath, "utf-8");
             const scrapedData = JSON.parse(jsonData);
-          
-            // สร้าง Promise array โดยให้แต่ละ Promise เป็นการทำงานในลูป
+
             const promises = scrapedData.map(async (articleData) => {
               const imgLinksString = articleData.imgLinks.join(', ').replace(/[\[\]]/g, '');
-          
+
               const existingArticle = await prisma.news.findFirst({
                 where: {
                   title: {
@@ -475,7 +411,7 @@ export const hackerNewFetchToday = async () => {
                   },
                 },
               });
-          
+
               if (!existingArticle) {
                 await prisma.news.create({
                   data: {
@@ -496,21 +432,19 @@ export const hackerNewFetchToday = async () => {
                     }),
                   },
                 });
-          
+
                 console.log(`ข้อมูล "${articleData.title}" ได้ถูกเพิ่มลงใน MySQL แล้ว`);
               } else {
                 console.log(`ข้อมูล "${articleData.title}" มีอยู่ใน MySQL แล้ว`);
               }
             });
-          
-            // รอให้ทุก Promise เสร็จสิ้น
+
             await Promise.all(promises);
           } catch (error) {
             console.error("เกิดข้อผิดพลาดในการอ่านไฟล์ JSON:", error);
           } finally {
             await prisma.$disconnect();
           }
-          
         } else {
           console.log("No elements with class 'story-link' found.");
         }
@@ -518,7 +452,6 @@ export const hackerNewFetchToday = async () => {
         // Perform actions when dates do not match
         // ...
       }
-      await browser.close();
     } catch (error) {
       console.error("An error occurred:", error);
     }

@@ -6,6 +6,10 @@ import path from "path";
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import sharp from "sharp"
+import { scrapeLinks, scrapeArticleContent } from "./fetchalltime/scraper.js";
+import { downloadImage } from "./fetchalltime/downloader.js";
+import { translateText, translateThai } from "./fetchalltime/translator.js";
+import { JsonPushToDB, disconnectDatabase } from "./fetchalltime/database.js";
 
 dotenv.config();
 
@@ -18,193 +22,10 @@ const removeElements = async (page, selectors) => {
   }
 };
 
-const scrapeLinks = async (url) => {
-  const unwantedUrl = 'https://thn.news'
-  const browser = await puppeteer.launch({
-    headless: false,
-  });
-  const page = await browser.newPage();
-  await page.goto(url);
 
-  // Scroll down 3 times, waiting for some time between scrolls
-  for (let i = 0; i < 3; i++) {
-    await page.evaluate(() => {
-      window.scrollBy(0, window.innerHeight);
-    });
-    // await page.waitForTimeout(1000);
-  }
 
-  let hasNextPage = true;
-  let allLinks = [];
 
-  while (hasNextPage) {
-    const links = await page.$$eval(".story-link", (anchors) =>
-      anchors.map((anchor) => anchor.getAttribute("href"))
-    );
 
-    // Filter out unwanted links
-    const filteredLinks = links.filter(link => !link.includes(unwantedUrl));
-
-    allLinks = allLinks.concat(filteredLinks);
-    console.log("🚀 ~ file: hackerNewFetchAlltime.js:35 ~ scrapeLinks ~ allLinks:", allLinks);
-
-    // Scroll down 3 times, waiting for some time between scrolls
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => {
-        window.scrollBy(0, window.innerHeight);
-      });
-      // await page.waitForTimeout(1000);
-    }
-
-    const nextPageButton = await page.$("#Blog1_blog-pager-older-link");
-
-    if (nextPageButton) {
-      await page.waitForSelector("#Blog1_blog-pager-older-link");
-      await Promise.all([
-        page.click("#Blog1_blog-pager-older-link"),
-        page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-      ]);
-    } else {
-      hasNextPage = false;
-    }
-  }
-
-  await browser.close();
-  return allLinks;
-};
-
-const downloadImage = async (imageUrl, folderPath) => {
-  try {
-    const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
-    const webpBuffer = await sharp(response.data).webp().toBuffer();
-    const fileNameWithoutExtension = generateUniqueId();
-    const webpFilePath = path.join(folderPath, `${fileNameWithoutExtension}.webp`);
-    await fs.writeFile(webpFilePath, webpBuffer);
-    console.log(`Downloaded image: ${fileNameWithoutExtension}.webp`);
-    return `${fileNameWithoutExtension}.webp`;
-  } catch (error) {
-    console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
-    return null;
-  }
-};
-
-const scrapeArticleContent = async (link) => {
-  const browser = await puppeteer.launch({
-    headless: false,
-  });
-
-  try {
-    const page = await browser.newPage();
-    await page.goto(link, { waitUntil: 'domcontentloaded' });
-
-    await page.evaluate(() => {
-      const bottomElement = document.body.lastElementChild;
-      if (bottomElement) {
-        bottomElement.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
-      }
-    });
-    
-    await page.waitForTimeout(1000);
-    const [title, author, pTags, date] = await Promise.all([
-      page.waitForSelector(".story-title").then(() => page.$eval(".story-title", (titleElement) => titleElement.innerText)),
-      page.waitForSelector(".postmeta .author").then(() => page.$eval(".postmeta .author", (authorElement) => authorElement.innerText.trim())),
-      page.waitForSelector(".postmeta .p-tags").then(() => page.$eval(".postmeta .p-tags", (pTagsElement) => pTagsElement.innerText.trim())),
-      page.waitForSelector(".postmeta .author").then(() => page.$eval(".postmeta .author", (dateElement) => dateElement.textContent.trim())),
-    ]);
-
-    const imgLinksInSeparator = await page.$$eval(
-      ".separator a img",
-      (imgs) =>
-        imgs
-          .filter((_, index) => index === 0)
-          .map((img) => {
-            const parentAnchor = img.closest("a");
-            return parentAnchor ? img.getAttribute("src") : null;
-          })
-          .filter((src) => src)
-    );
-
-    const successfulDownloads = await Promise.allSettled(
-      imgLinksInSeparator.map(async (imageUrl) => {
-        try {
-          const downloadedImageFilename = await downloadImage(imageUrl, "images");
-          if (downloadedImageFilename) {
-            console.log(`Downloaded image: ${downloadedImageFilename}`);
-            return downloadedImageFilename;
-          } else {
-            console.error(`Failed to download image from ${imageUrl}`);
-            return null;
-          }
-        } catch (error) {
-          console.error(`Failed to download image from ${imageUrl}: ${error.message}`);
-          return null;
-        }
-      })
-    );
-
-    const articleContent = await page.evaluate(() => {
-      const mainBoxElement = document.querySelector('.main-box.clear');
-  
-      if (!mainBoxElement) return "";
-  
-      // Remove unnecessary elements
-      const unnecessaryElements = mainBoxElement.querySelectorAll('.check_two.clear.babsi, .cf.note-b, .editor-rtfLink, .right-box');
-      unnecessaryElements.forEach((element) => element.remove());
-  
-      // Extract text content from all paragraphs excluding <a> tags
-      const paragraphTexts = Array.from(mainBoxElement.querySelectorAll('p'), (p) => {
-        // Remove <a> tags from the innerHTML
-        const withoutATags = p.innerHTML.replace(/<a\b[^>]*>.*?<\/a>/g, '');
-        return `<p>${withoutATags.trim()}</p>`;
-      });
-  
-      // Concatenate paragraphs into a single string
-      return paragraphTexts.join('');
-    });
-
-    
-    // await browser.close();
-
-    return {
-      title,
-      date,
-      author,
-      pTags,
-      imgLinksInSeparator: successfulDownloads
-        .filter((result) => result.status === "fulfilled")
-        .map((result) => path.basename(result.value)),
-      contentEn: articleContent,
-    };
-  } catch (error) {
-    console.error("An error occurred:", error.message);
-    await browser.close();
-    return {
-      title: "",
-      date: "",
-      author: "",
-      pTags: "",
-      imgLinksInSeparator: [],
-      contentEn: "",
-    };
-  }
-};
-
-const saveAllLinks = async () => {
-  // const homepageLinks = await scrapeLinks("https://thehackernews.com/");
-  const dataBreachLinks = await scrapeLinks("https://thehackernews.com/search/label/data%20breach");
-  const cyberAttackLinks = await scrapeLinks("https://thehackernews.com/search/label/Cyber%20Attack");
-  const vulnerabilityLinks = await scrapeLinks("https://thehackernews.com/search/label/Vulnerability");
-
-  const allLinks = {
-    // Home: homepageLinks,
-    "Data Breach": dataBreachLinks,
-    "Cyber Attack": cyberAttackLinks,
-    Vulnerability: vulnerabilityLinks,
-  };
-
-  await  fs.writeFile("src/schedules/all_links.json", JSON.stringify(allLinks, null, 2));
-  console.log("All links saved to all_links.json");
-};
 
 const generateUniqueId = () => "_" + Math.random().toString(36).substr(2, 9);
 
@@ -244,108 +65,7 @@ const scrapeAndSaveArticles = async () => {
   }
 };
 
-const translateText = async (text, targetLanguage = "th") => {
-  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-  const translateApiUrl = "https://translation.googleapis.com/language/translate/v2";
 
-  const textChunks = splitTextIntoChunks(text, 5000);
-
-  try {
-    const translations = await Promise.all(
-      textChunks.map(async (chunk) => {
-        const params = {
-          key: apiKey,
-          q: chunk,
-          target: targetLanguage,
-        };
-
-        const response = await axios.post(translateApiUrl, null, { params });
-        return response.data.data.translations[0].translatedText;
-      })
-    );
-
-    const translatedText = translations.join(" ");
-    console.log("🚀 ~ translateText ~ translatedText:", translatedText)
-    return translatedText;
-  } catch (error) {
-    console.error("Translation error:", error.message);
-    throw error;
-  }
-};
-
-
-const splitTextIntoChunks = (text, chunkSize) => {
-  const regex = new RegExp(`.{1,${chunkSize}}`, "g");
-  return text.match(regex) || [];
-};
-
-const translateThai = async () => {
-  const rawData = await fs.readFile("src/schedules/article_data.json", "utf8");
-  const articles = JSON.parse(rawData);
-  console.log("🚀 ~ translateThai ~ articles:", articles)
-  const translatedArticles = [];
-
-  for (const article of articles) {
-    const titleEn = article.title;
-    const contentEn = article.contentEn;
-
-    const titleTh = await translateText(titleEn);
-    const contentTh = await translateText(contentEn);
-
-    article.titleTh = titleTh;
-    article.contentTh = contentTh;
-
-    translatedArticles.push(article);
-  }
-
-  await fs.writeFile("src/schedules/article_data.json", JSON.stringify(translatedArticles, null, 2), "utf8");
-  console.log("Translation completed. Translated data saved to article_data.json");
-};
-
-
-const JsonPushToDB = async () => {
-  const prisma = new PrismaClient();
-
-  try {
-    const rawData = await fs.readFile("src/schedules/article_data.json", "utf-8");
-    const articles = JSON.parse(rawData);
-
-    for (const article of articles) {
-      const imgLinksString = article.imgLinks.join(", ").replace(/[\[\]]/g, "");
-      const existingArticle = await prisma.news.findFirst({
-        where: {
-          title: article.title,
-          date: article.date,
-        },
-      });
-
-      if (!existingArticle) {
-        await prisma.news.create({
-          data: {
-            category: article.category,
-            title: article.title,
-            date: article.date,
-            author: article.author,
-            pTags: article.pTags,
-            imgLinks: imgLinksString,
-            contentEn: article.contentEn,
-            ref: article.ref,
-            titleTh: article.titleTh,
-            contentTh: article.contentTh,
-          },
-        });
-      } else {
-        console.log(`Skipping duplicate record: ${article.title} - ${article.date}`);
-      }
-    }
-
-    console.log("Data import successful");
-  } catch (error) {
-    console.error("Error importing data:", error);
-  } finally {
-    await prisma.$disconnect();
-  }
-};
 
 let isTaskRunning = false;
 
@@ -353,8 +73,8 @@ const startTask = async () => {
   if (!isTaskRunning) {
     isTaskRunning = true;
     try {
-      // await saveAllLinks();
-      await scrapeAndSaveArticles();
+       await scrapeLinks();
+      //await scrapeAndSaveArticles();
       // await translateThai();
       // await JsonPushToDB();
     } catch (error) {

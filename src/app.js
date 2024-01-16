@@ -7,13 +7,13 @@ import api from "./api/v1/index.js";
 import cors from "cors";
 import { NotFoundRequestException } from "./exceptions/not-found-request.exception.js";
 import { errorHandlerMiddleware } from "./middlewares/error-handler.middleware.js";
-import { hackerNewFetchAlltime } from "./schedules/hackerNewFetchAlltime.js";
+import { hackerNewFetchAlltime } from "./schedules/fetchalltime/main.js";
 import { hackerNewFetchToday } from "./schedules/hackerNewFetchToday.js";
 
 const app = express();
 // resetProductSchedule();
-// hackerNewFetchToday();
-hackerNewFetchAlltime();
+hackerNewFetchToday();
+// hackerNewFetchAlltime();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(morgan("dev"));
