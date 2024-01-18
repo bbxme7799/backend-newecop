@@ -15,7 +15,7 @@ model News {
   id        Int       @id @default(autoincrement())
   category  String?  @db.Text()
   title     String?  @db.Text()
-  date      String
+  date      String?
   author    String
   pTags     String
   imgLinks  String

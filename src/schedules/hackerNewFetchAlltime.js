@@ -73,10 +73,10 @@ const startTask = async () => {
   if (!isTaskRunning) {
     isTaskRunning = true;
     try {
-       await scrapeLinks();
+      //  await scrapeLinks();
       //await scrapeAndSaveArticles();
       // await translateThai();
-      // await JsonPushToDB();
+      await JsonPushToDB();
     } catch (error) {
       console.error("An error occurred:", error.message);
     } finally {

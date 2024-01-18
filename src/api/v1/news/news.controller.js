@@ -159,8 +159,6 @@ export const createNews = async (req, res, next) => {
     }
   };
 
-
-  // UPDATE
 // UPDATE
 export const updateNews = async (req, res, next) => {
     const { id } = idSchema.parse(req.params);
@@ -207,8 +205,6 @@ export const updateNews = async (req, res, next) => {
     }
   };
   
-  
-  // DELETE
 // DELETE
 export const deleteNews = async (req, res, next) => {
     const { id } = idSchema.parse(req.params);
@@ -227,44 +223,45 @@ export const deleteNews = async (req, res, next) => {
     }
   };
   
+//http://ip-api.com/json/?fields=query
+export const logView = async (req, res, next) => {
+  try {
+    const { newsId, userIp } = logViewSchema.parse(req.body);
 
-  export const logView = async (req, res, next) => {
-    try {
-      const { newsId,userIp } = logViewSchema.parse(req.body);
-  
-      // Check User-Agent and IP Address
-      const userAgent = req.get('User-Agent');
-  
-      // Check if this page has been viewed already
-      const news = await prisma.news.findUnique({
-        where: { id: newsId },
-        include: { viewedBy: true }, // Include the related views
-      });
-  
-      if (!news) {
-        return res.status(404).json({ success: false, message: 'News not found' });
-      }
-  
-      // Ensure that viewedBy array is defined
-      const isViewed = news.viewedBy?.some((view) => view.ip === userIp && view.userAgent === userAgent);
-  
-      if (!isViewed) {
-        // Log views and User-Agent and IP Address data
-        await prisma.news.update({
-          where: { id: newsId },
-          data: {
-            viewCount: news.viewCount + 1,
-            viewedBy: [...news.viewedBy, { ip: userIp, userAgent }],
-          },
-        });
-      }
-  
-      return res.status(200).json({ success: true, message: 'View logged successfully' });
-    } catch (error) {
-      console.error('Error logging view:', error);
-      return res.status(500).json({ success: false, message: 'Internal Server Error' });
-    } finally {
-      await prisma.$disconnect();
+    // Check User-Agent
+    const userAgent = req.get('User-Agent');
+
+    // Check if this page has been viewed already
+    const news = await prisma.news.findUnique({
+      where: { id: newsId },
+      include: { viewedBy: true }, // Include the related views
+    });
+
+    if (!news) {
+      return res.status(404).json({ success: false, message: 'News not found' });
     }
-  };
 
+    // Ensure that viewedBy array is defined
+    const isViewed = news.viewedBy?.some((view) => view.ip === userIp && view.userAgent === userAgent);
+
+    if (!isViewed) {
+      // Log views and User-Agent and IP Address data
+      await prisma.news.update({
+        where: { id: newsId },
+        data: {
+          viewCount: news.viewCount + 1,
+          viewedBy: {
+            create: { ip: userIp, userAgent }
+          },
+        },
+      });
+    }
+
+    return res.status(200).json({ success: true, message: 'View logged successfully' });
+  } catch (error) {
+    console.error('Error logging view:', error);
+    return res.status(500).json({ success: false, message: 'Internal Server Error' });
+  } finally {
+    await prisma.$disconnect();
+  }
+};

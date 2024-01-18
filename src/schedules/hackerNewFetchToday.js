@@ -8,6 +8,8 @@ import sharp from "sharp";
 import cheerio from 'cheerio';
 
 const prisma = new PrismaClient();
+const SCROLL_CHUNK_SIZE = 5000;
+const SCROLL_ITERATIONS = 3;
 const compareDates = (dateTimeText) => {
   const dateTimeComponents = dateTimeText.match(/(\w{3}) (\d{2}), (\d{4})/);
   if (dateTimeComponents) {
@@ -62,17 +64,20 @@ const scrapeArticleData = async (link) => {
     const response = await axios.get(link);
     const $ = cheerio.load(response.data);
 
+    const simulateScrolling = async ($) => {
+      for (let i = 0; i < SCROLL_ITERATIONS; i++) {
+        $('body').append(`<div style="height:${SCROLL_CHUNK_SIZE}px;"></div>`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    };
     await simulateScrolling($);
 
     removeUnwantedElements($);
 
     const { title, author, pTags, date, imgLinksInSeparator } = extractArticleInfo($);
-    
-    const jsonFilePath = path.join("src/schedules", "scrapedData.json");
-    const jsonData = await readJsonFile(jsonFilePath);
 
-    const isTitleExist = jsonData.some(data => data.title === title);
-    const isDateExist = jsonData.some(data => data.date === date);
+    const isTitleExist = await prisma.news.findFirst({ where: { title } });
+    const isDateExist = await prisma.news.findFirst({ where: { date } });
 
     if (isTitleExist && isDateExist) {
       console.log("Data already exists. Translation not needed.");
@@ -90,7 +95,24 @@ const scrapeArticleData = async (link) => {
       if (!isTitleExist || !isDateExist) {
         const translatedArticleData = await translateArticleData(articleData);
         console.log("Translated Article Data:", translatedArticleData);
-        scrapedData.push(translatedArticleData);
+
+        await prisma.news.create({
+          data: {
+            category: translatedArticleData.category,
+            title: translatedArticleData.title,
+            date: translatedArticleData.date,
+            author: translatedArticleData.author,
+            pTags: translatedArticleData.pTags,
+            imgLinks: translatedArticleData.imgLinks.join(', '),
+            contentEn: translatedArticleData.contentEn,
+            ref: translatedArticleData.ref,
+            titleTh: translatedArticleData.titleTh,
+            contentTh: translatedArticleData.contentTh,
+            editorUsername: translatedArticleData.editorUsername,
+          },
+        });
+
+        console.log(`Scraped and translated data has been saved to the database`);
       }
     }
   } catch (error) {
@@ -98,12 +120,6 @@ const scrapeArticleData = async (link) => {
   }
 };
 
-const simulateScrolling = async ($) => {
-  for (let i = 0; i < 3; i++) {
-    $('body').append('<div style="height:1000px;"></div>');
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-};
 
 const removeUnwantedElements = ($) => {
   $(".icon-font.icon-calendar, .right-box, .below-post-box.cf, .footer-stuff.clear.cf, .email-box, .header.clear").remove();
@@ -124,11 +140,6 @@ const extractArticleInfo = ($) => {
   return { title, author, pTags, date, imgLinksInSeparator };
 };
 
-const readJsonFile = async (jsonFilePath) => {
-  await fs.access(jsonFilePath);
-  const existingData = await fs.readFile(jsonFilePath, "utf-8");
-  return JSON.parse(existingData);
-};
 
 const downloadImages = async (imgLinks, imageFolder) => {
   const downloadedImages = await Promise.all(
@@ -191,53 +202,6 @@ const translateArticleData = async (articleData) => {
     contentTh: translatedContent,
   };
 };
-const saveAllToJson = async (allData) => {
-  const jsonFilePath = path.join("src/schedules", "scrapedData.json");
-
-  try {
-    // Check if the file exists
-    await fs.access(jsonFilePath);
-
-    // File exists, read existing JSON data
-    const existingData = await fs.readFile(jsonFilePath, "utf-8");
-
-    let jsonData;
-    try {
-      jsonData = JSON.parse(existingData);
-    } catch (parseError) {
-      console.error("Error parsing existing JSON data:", parseError.message);
-      jsonData = [];
-    }
-
-    // Check for duplicate data
-    const isDuplicate = jsonData.some((existingItem) =>
-      allData.some(
-        (newItem) =>
-          newItem.title === existingItem.title &&
-          newItem.date === existingItem.date
-      )
-    );
-
-    if (!isDuplicate) {
-      // No duplicates, append new data
-      jsonData.push(...allData);
-
-      // Write the updated array back to the file
-      await fs.writeFile(jsonFilePath, JSON.stringify(jsonData, null, 2));
-      console.log(`Scraped data has been saved to ${jsonFilePath}`);
-    } else {
-      console.log("Duplicate data found, not saving to the file.");
-    }
-  } catch (error) {
-    // File does not exist or other file-related error
-    const jsonData = allData;
-
-    // Write the array to the file
-    await fs.writeFile(jsonFilePath, JSON.stringify(jsonData, null, 2));
-    console.log(`Scraped data has been saved to ${jsonFilePath}`);
-  }
-};
-
 
 const downloadImage = async (imageUrl, folderPath) => {
   try {
@@ -321,18 +285,11 @@ const updateCategoryByTitle = async (title, newCategory) => {
 
 
 const checkAndUpdateCategory = async (url, expectedCategory) => {
-  const browser = await puppeteer.launch({ headless: "new" });
-  const page = await browser.newPage();
-
   try {
-    await page.goto(url);
-    await page.waitForSelector('.blog-posts.clear');
+    const response = await axios.get(url);
+    const $ = cheerio.load(response.data);
 
-    const titles = await page.evaluate(() => {
-      const titleElements = document.querySelectorAll('.home-title');
-      return Array.from(titleElements, (element) => element.textContent);
-    });
-    // console.log("🚀 ~ file: hackerNewFetchToday.js:492 ~ titles ~ titles:", titles)
+    const titles = $('.home-title').map((index, element) => $(element).text()).get();
 
     for (const title of titles) {
       const existingArticle = await prisma.news.findFirst({
@@ -345,15 +302,13 @@ const checkAndUpdateCategory = async (url, expectedCategory) => {
     }
   } catch (error) {
     console.error(`Error checking and updating category for ${url}:`, error);
-  } finally {
-    await browser.close();
   }
 };
 
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
-  cron.schedule("*/15 * * * *", async () => {
+  cron.schedule("*/5 * * * *", async () => {
     try {
       const response = await axios.get("https://thehackernews.com/");
       const $ = cheerio.load(response.data);
@@ -361,14 +316,17 @@ export const hackerNewFetchToday = async () => {
       checkAndUpdateCategory('https://thehackernews.com/search/label/Cyber%20Attack', 'CyberAttack');
       checkAndUpdateCategory('https://thehackernews.com/search/label/Vulnerability', 'Vulnerability');
 
-      // Remove unwanted elements
       $(".icon-font.icon-calendar, .right-box, .below-post-box.cf, .footer-stuff.clear.cf, .email-box, .header.clear").remove();
 
-      // Scroll down 3 times, waiting for some time between scrolls
-      for (let i = 0; i < 3; i++) {
-        $('body').append('<div style="height:1000px;"></div>'); // simulate scrolling
-        await new Promise(resolve => setTimeout(resolve, 1000)); // wait for content to load or animations to complete
-      }
+
+      const simulateScrolling = async ($) => {
+        for (let i = 0; i < SCROLL_ITERATIONS; i++) {
+          $('body').append(`<div style="height:${SCROLL_CHUNK_SIZE}px;"></div>`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      };
+
+      simulateScrolling($);
 
       const dateTimeText = $(".h-datetime").text().trim();
       const datesMatch = compareDates(dateTimeText);
@@ -387,63 +345,40 @@ export const hackerNewFetchToday = async () => {
         });
 
         if (matchedLinks.length > 0) {
-          for (const matchedLink of matchedLinks) {
-            await scrapeArticleData(matchedLink);
-          }
+          const scrapedData = await Promise.all(matchedLinks.map(scrapeArticleData));
+          const allData = scrapedData.filter(Boolean);
 
-          await saveAllToJson(scrapedData);
+          if (allData.length > 0) {
+            const existingData = await prisma.news.findMany();
+            const uniqueData = allData.filter(newItem =>
+              !existingData.some(existingItem =>
+                newItem.title === existingItem.title && newItem.date === existingItem.date
+              )
+            );
 
-          try {
-            const jsonFilePath = path.join("src/schedules", "scrapedData.json");
-            const jsonData = await fs.readFile(jsonFilePath, "utf-8");
-            const scrapedData = JSON.parse(jsonData);
-
-            const promises = scrapedData.map(async (articleData) => {
-              const imgLinksString = articleData.imgLinks.join(', ').replace(/[\[\]]/g, '');
-
-              const existingArticle = await prisma.news.findFirst({
-                where: {
-                  title: {
-                    equals: articleData.title,
-                  },
-                  date: {
-                    equals: articleData.date,
-                  },
-                },
+            if (uniqueData.length > 0) {
+              await prisma.news.createMany({
+                data: uniqueData.map(articleData => ({
+                  category: articleData.category,
+                  title: articleData.title,
+                  date: articleData.date,
+                  author: articleData.author,
+                  pTags: articleData.pTags,
+                  imgLinks: articleData.imgLinks.join(', '),
+                  contentEn: articleData.contentEn,
+                  ref: articleData.ref,
+                  titleTh: articleData.titleTh,
+                  contentTh: articleData.contentTh,
+                  editorUsername: articleData.editorUsername,
+                })),
               });
 
-              if (!existingArticle) {
-                await prisma.news.create({
-                  data: {
-                    category: articleData.category,
-                    title: articleData.title,
-                    date: articleData.date,
-                    author: articleData.author,
-                    pTags: articleData.pTags,
-                    imgLinks: imgLinksString,
-                    contentEn: articleData.contentEn,
-                    ref: articleData.ref,
-                    titleTh: articleData.titleTh,
-                    contentTh: articleData.contentTh,
-                    ...(articleData.editorUsername && {
-                      editor: {
-                        connect: { username: articleData.editorUsername },
-                      },
-                    }),
-                  },
-                });
-
-                console.log(`ข้อมูล "${articleData.title}" ได้ถูกเพิ่มลงใน MySQL แล้ว`);
-              } else {
-                console.log(`ข้อมูล "${articleData.title}" มีอยู่ใน MySQL แล้ว`);
-              }
-            });
-
-            await Promise.all(promises);
-          } catch (error) {
-            console.error("เกิดข้อผิดพลาดในการอ่านไฟล์ JSON:", error);
-          } finally {
-            await prisma.$disconnect();
+              console.log(`Scraped data has been saved to the database`);
+            } else {
+              console.log("No unique data found, not saving to the database.");
+            }
+          } else {
+            console.log("No valid data to scrape.");
           }
         } else {
           console.log("No elements with class 'story-link' found.");
