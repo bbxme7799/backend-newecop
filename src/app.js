@@ -15,23 +15,6 @@ import { hackerNewFetchToday } from "./schedules/hackerNewFetchToday.js";
 const app = express();
 app.use(helmet());
 
-app.use(
-  helmet.contentSecurityPolicy({
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", 'trusted-scripts.com'],
-      styleSrc: ["style.com"],
-    },
-  })
-);
-
-// สามารถเพิ่มการตั้งค่า HSTS ตามต้องการ
-app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true }));
-
-// สามารถเพิ่มการตั้งค่า Frameguard ตามต้องการ
-app.use(helmet.frameguard({ action: 'deny' }));
-
-
 // resetProductSchedule();
 hackerNewFetchToday();
 // hackerNewFetchAlltime();
