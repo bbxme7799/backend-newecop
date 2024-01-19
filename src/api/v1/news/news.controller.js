@@ -45,6 +45,7 @@ export const getNews = async (req, res, next) => {
         currentPage: parsedPage,
         totalPages,
         totalItems: totalNews,
+        countPerPage: news.length, // Add count per page
       },
     });
   } catch (error) {
@@ -52,6 +53,7 @@ export const getNews = async (req, res, next) => {
     next(error);
   }
 };
+
 
 export const searchNews = async (req, res, next) => {
   let { title, titleTh, category, page, pageSize } = SearchNewsQuerySchema.parse(req.query);
@@ -96,6 +98,8 @@ export const searchNews = async (req, res, next) => {
           currentPage: page,
           totalPages: totalPages,
           totalItems: totalCount,
+          itemsPerPage: pageSize,
+          countPerPage: news.length, // Add count per page
         },
       });
     } else {
