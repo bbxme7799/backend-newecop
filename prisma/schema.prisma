@@ -29,6 +29,7 @@ model News {
   updated_at        DateTime            @updatedAt
   viewCount  Int       @default(0)
   viewedBy   View[]    // Change to reference the View model
+  trend_new String @default("normal")
 }
 
 

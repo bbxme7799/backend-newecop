@@ -56,39 +56,41 @@ export const getNews = async (req, res, next) => {
 
 
 export const searchNews = async (req, res, next) => {
-  let { title, titleTh, category, page, pageSize } = SearchNewsQuerySchema.parse(req.query);
+  let { title, titleTh, category, page, pageSize, trendNew } = SearchNewsQuerySchema.parse(req.query);
 
   // Decode URL parameters
   title = decodeURIComponent(title || '');
   titleTh = decodeURIComponent(titleTh || '');
-  // category = decodeURIComponent(category || '');
   page = parseInt(page) || 1;
   pageSize = parseInt(pageSize) || ITEMS_PER_PAGE;
 
   try {
-    let whereConditions = {};
+    // Use Prisma to create parameterized queries
+    const news = await prisma.news.findMany({
+      where: {
+        AND: [
+          { title: { contains: title } },
+          { titleTh: { contains: titleTh } },
+        ],
+        category: { contains: category },
+        trend_new: { contains: trendNew }, // Add this line to search by trend_new
+      },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    });
 
-    if (title || titleTh) {
-      whereConditions.AND = [
-        { title: { contains: title } },
-        { titleTh: { contains: titleTh } },
-      ];
-    }
-
-    if (category) {
-      whereConditions.category = { contains: category };
-    }
-
-    const totalCount = await prisma.news.count({ where: whereConditions });
+    const totalCount = await prisma.news.count({
+      where: {
+        AND: [
+          { title: { contains: title } },
+          { titleTh: { contains: titleTh } },
+        ],
+        category: { contains: category },
+        trend_new: { contains: trendNew }, // Add this line to search by trend_new
+      },
+    });
 
     const totalPages = Math.ceil(totalCount / pageSize);
-    const skip = (page - 1) * pageSize;
-
-    const news = await prisma.news.findMany({
-      where: whereConditions,
-      take: pageSize,
-      skip: skip,
-    });
 
     if (news && news.length > 0) {
       return res.status(200).json({
@@ -99,22 +101,17 @@ export const searchNews = async (req, res, next) => {
           totalPages: totalPages,
           totalItems: totalCount,
           itemsPerPage: pageSize,
-          countPerPage: news.length, // Add count per page
         },
       });
     } else {
       return res.status(404).json({ success: false, message: "News not found" });
     }
   } catch (error) {
-    console.error("Error in searchNews:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   } finally {
     await prisma.$disconnect();
   }
 };
-
-
-
 
   
   

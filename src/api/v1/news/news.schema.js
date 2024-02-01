@@ -22,6 +22,7 @@ export const idSchema = z.object({
 // Schema for validating query parameters in the searchNews controller
 export const SearchNewsQuerySchema = z.object({
   title: z.string().optional(),
+  trendNew: z.string().optional(),
   titleTh: z.string().optional(),
   category: z.string().optional(),
   page: z.string().optional(),

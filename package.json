@@ -40,6 +40,7 @@
     "puppeteer-cluster": "^0.23.0",
     "request-ip": "^3.3.0",
     "sharp": "^0.33.1",
+    "uuid": "^9.0.1",
     "zod": "^3.22.4"
   }
 }
