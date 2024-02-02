@@ -77,7 +77,7 @@ function extractLinks($) {
     // console.log("🚀 ~ linkElements.each ~ dateElement:", dateElement)
 
     if (dateElement.length) {
-      // const currentDate = new Date(2024, 0, 31);
+      // const currentDate = new Date(2024, 1, 1);
       const currentDate = new Date();
       const newsDate = new Date(dateElement.text());
       // console.log("🚀 ~ linkElements.each ~ newsDate:", newsDate)
@@ -193,7 +193,7 @@ async function fetchDataFromLink(link) {
 }
 
 // ตั้งค่า cron job ให้ทำงานทุก 1 ชั่วโมง
-cron.schedule('*/45 * * * *', async () => {
+cron.schedule('0 */2 * * *', async () => {
   try {
     const links = await scrapeDarkReading();
     console.log('Fetched links:', links);
