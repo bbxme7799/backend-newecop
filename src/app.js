@@ -14,6 +14,7 @@ import { hackerNewFetchAlltime } from "./schedules/fetchalltime/main.js";
 import { hackerNewFetchToday } from "./schedules/hackerNewFetchToday.js";
 import { scrapeDarkReading } from "./schedules/darkreadingToday.js";
 import { fetchDataAndSave } from "./schedules/update-trend.js";
+import { fetchPopularResourcesAndSave } from "./schedules/popularResources.js";
 const app = express();
 app.use(helmet());
 
@@ -21,6 +22,7 @@ app.use(helmet());
 hackerNewFetchToday();
 scrapeDarkReading();
 fetchDataAndSave();
+fetchPopularResourcesAndSave();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(morgan("dev"));

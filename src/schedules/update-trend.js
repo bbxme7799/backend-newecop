@@ -18,7 +18,9 @@ async function fetchData(url) {
 }
 
 function cleanHTML($) {
+  // $('.PopularPosts').remove();
   $('.header.clear, .left-box, .below-post-box.cf, .footer-stuff.clear.cf').remove();
+  $('.clear.section.babsi.side_res').remove();
 }
 
 function getTitles($) {
@@ -26,19 +28,7 @@ function getTitles($) {
   $('.pop-title').each((index, element) => {
     titles.push($(element).text());
   });
-  console.log("🚀 ~ getTitles ~ titles:", titles)
   return titles;
-}
-
-function getResources($) {
-  $('.widget.PopularPosts').remove();
-  const resources = [];
-  $('.pop-article').each((index, element) => {
-    const title = $(element).find('.pop-title').text();
-    resources.push(title);
-  });
-  console.log("🚀 ~ getResources ~ resources:", resources)
-  return resources;
 }
 
 async function updateNews(news, trend) {
@@ -84,57 +74,27 @@ async function searchAndSetTrending(titles) {
   }
 }
 
-async function searchAndSetPopular(resources) {
-  try {
-    await Promise.all(resources.map(async (resource) => {
-      const existingNews = await prisma.news.findFirst({ where: { title: resource } });
-      if (existingNews) {
-        return updateNews(existingNews, 'Popular');
-      }
-    }));
-  } catch (error) {
-    console.error('Error searching and updating:', error);
-  }
-}
-
-async function searchAndResetTrendPopular(resources) {
-  try {
-    if (titles && titles.length > 0) {
-      const trendingNews = await prisma.news.findMany({ where: { trend_new: 'Popular' } });
-
-      if (trendingNews.length > 0) {
-        await Promise.all(trendingNews.map(async (news) => {
-          if (!titles.includes(news.title)) {
-            return updateNews(news, 'Normal');
-          }
-        }));
-      }
-    }
-  } catch (error) {
-    console.error('Error searching and resetting Trending News:', error);
-  }
-}
 
 export async function fetchDataAndSave() {
   cron.schedule('*/15 * * * *', async () => {
     try {
       const htmlData = await fetchData(url);
-      const $ = cheerio.load(htmlData);
-      cleanHTML($);
-  
-      const titles = getTitles($);
-      const resources = getResources($);
-  
-      await searchAndResetTrending(titles);
-      await searchAndSetTrending(titles);
-      await searchAndSetPopular(resources);
-      await searchAndResetTrendPopular(resources)
-  
+
+      // Clone cheerio object for titles
+      const $titles = cheerio.load(htmlData);
+      cleanHTML($titles);
+
+      const titles = getTitles($titles);
+      console.log("🚀 ~ cron.schedule ~ titles:", titles);
+
+      await Promise.all([
+        searchAndResetTrending(titles),
+        searchAndSetTrending(titles),
+      ]);
+
       console.log('Data saved to the database.');
     } catch (error) {
       console.error(error.message);
     }
   });
-
 }
-
