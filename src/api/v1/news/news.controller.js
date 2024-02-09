@@ -1,5 +1,6 @@
 // controllers/newsController.js
 import { PrismaClient } from "@prisma/client";
+import axios from "axios";
 import { SearchNewsQuerySchema,GetNewsQuerySchema,updateNewsSchema,logViewSchema,idSchema,createNewsSchema } from "./news.schema.js"
 const prisma = new PrismaClient();
 
@@ -232,6 +233,9 @@ export const logView = async (req, res, next) => {
     // Check User-Agent
     const userAgent = req.get('User-Agent');
 
+    // Fetch user location data from the IP API
+    const userLocation = await getUserLocation(userIp);
+
     // Check if this page has been viewed already
     const news = await prisma.news.findUnique({
       where: { id: newsId },
@@ -252,7 +256,15 @@ export const logView = async (req, res, next) => {
         data: {
           viewCount: news.viewCount + 1,
           viewedBy: {
-            create: { ip: userIp, userAgent }
+            create: {
+              ip: userIp,
+              userAgent,
+              country: userLocation?.country || null,
+              region: userLocation?.region || null,
+              city: userLocation?.city || null,
+              latitude: userLocation?.lat || null,
+              longitude: userLocation?.lon || null,
+            },
           },
         },
       });
@@ -264,5 +276,17 @@ export const logView = async (req, res, next) => {
     return res.status(500).json({ success: false, message: 'Internal Server Error' });
   } finally {
     await prisma.$disconnect();
+  }
+};
+
+
+// Function to get user geographical information using ip-api.com
+export const getUserLocation = async (ip) => {
+  try {
+    const response = await axios.get(`http://ip-api.com/json/${ip}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching user location:', error);
+    return null;
   }
 };

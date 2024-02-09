@@ -136,10 +136,10 @@ async function fetchDataFromLink(link) {
       const modifiedImageUrl = parsedUrl.toString();
 
       // Generate UUID for the image file name
-      const imageFileName = uuidv4() + '.jpg';
+      const imageFileName = uuidv4();
 
       // Download and save the image asynchronously
-      const imagePath = 'images/' + imageFileName;
+      const imagePath = 'images/' + imageFileName + '.jpg';
       const imageResponse = await axios.get(modifiedImageUrl, { responseType: 'arraybuffer' });
       await fs.promises.writeFile(imagePath, imageResponse.data);
 

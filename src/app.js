@@ -15,6 +15,7 @@ import { hackerNewFetchToday } from "./schedules/hackerNewFetchToday.js";
 import { scrapeDarkReading } from "./schedules/darkreadingToday.js";
 import { fetchDataAndSave } from "./schedules/update-trend.js";
 import { fetchPopularResourcesAndSave } from "./schedules/popularResources.js";
+// import { scrapeData } from "./schedules/cybernewToday.js";
 const app = express();
 app.use(helmet());
 
@@ -22,6 +23,7 @@ app.use(helmet());
 hackerNewFetchToday();
 scrapeDarkReading();
 fetchDataAndSave();
+// scrapeData();
 fetchPopularResourcesAndSave();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -33,7 +35,7 @@ app.use(
   })
 );
 
-const whitelist = ["http://myservicestore.store","http://localhost:3000","http://www.myservicestore.store"];
+const whitelist = ["http://test.com"];
 
 app.use(
   cors({
