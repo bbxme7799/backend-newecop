@@ -308,7 +308,7 @@ const checkAndUpdateCategory = async (url, expectedCategory) => {
 const scrapedData = [];
 
 export const hackerNewFetchToday = async () => {
-  cron.schedule('0 */1 * * *', async () => {
+    cron.schedule('0 */2 * * *', async () => {
     try {
       const response = await axios.get("https://thehackernews.com/");
       const $ = cheerio.load(response.data);

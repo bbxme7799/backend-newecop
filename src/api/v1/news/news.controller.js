@@ -290,3 +290,60 @@ export const getUserLocation = async (ip) => {
     return null;
   }
 };
+export const getViewCount = async (req, res) => {
+  try {
+    const { period } = req.query;
+    const startDate = getStartDate(period);
+
+    const { views, newsTitles } = await getViewsAndTitlesByPeriod(startDate);
+    const newsCounts = countNews(views);
+
+    const newsData = Object.keys(newsTitles).map(id => ({
+      id,
+      title: newsTitles[id],
+      count: newsCounts[id] || 0
+    }));
+
+    res.status(200).json({ success: true, newsData });
+  } catch (error) {
+    console.error('Error retrieving view count:', error);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};
+
+const getStartDate = (period) => {
+  const startDate = new Date();
+  if (period === '7') startDate.setDate(startDate.getDate() - 7);
+  else if (period === '30') startDate.setDate(startDate.getDate() - 30);
+  startDate.setHours(0, 0, 0, 0);
+  return startDate;
+};
+
+export const getViewsAndTitlesByPeriod = async (startDate) => {
+  try {
+    const views = await prisma.view.findMany({
+      where: { created_at: { gte: startDate } },
+      include: { news: { select: { id: true, title: true } } }
+    });
+
+    const newsTitles = {};
+    views.forEach(view => {
+      const { id, title } = view.news;
+      if (!newsTitles[id]) newsTitles[id] = title;
+    });
+
+    return { views, newsTitles };
+  } catch (error) {
+    console.error('Error counting views by period:', error);
+    throw error;
+  }
+};
+
+const countNews = (views) => {
+  const newsCounts = {};
+  views.forEach(view => {
+    const { id } = view.news;
+    newsCounts[id] = (newsCounts[id] || 0) + 1;
+  });
+  return newsCounts;
+};

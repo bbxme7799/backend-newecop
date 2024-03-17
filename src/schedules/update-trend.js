@@ -76,7 +76,7 @@ async function searchAndSetTrending(titles) {
 
 
 export async function fetchDataAndSave() {
-  cron.schedule('*/15 * * * *', async () => {
+  cron.schedule('0 */2 * * *', async () => {
     try {
       const htmlData = await fetchData(url);
 

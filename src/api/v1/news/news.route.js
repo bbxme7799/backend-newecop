@@ -5,7 +5,8 @@ import {
   updateNews,
   deleteNews,
   searchNews,
-  logView
+  logView,
+  getViewCount
 } from "./news.controller.js";
 import { validateRequestMiddleware } from "../../../middlewares/validate-request.middleware.js";
 // import {
@@ -19,8 +20,12 @@ const router = express.Router();
 // Route to get all news
 router.get("/", getNews);
 router.get("/search", searchNews);
+router.post('/logView', logView);
+router.get('/views', getViewCount);
+
+
 router.post("/create",jwtAuthMiddleware, roleMiddleware(1), createNews); // Create a new News
 router.put("/:id",jwtAuthMiddleware, roleMiddleware(1), updateNews); // Update a specific News by ID
 router.delete("/:id",jwtAuthMiddleware, roleMiddleware(1), deleteNews); // Delete a specific News by ID
-router.post('/logView', logView);
+
 export { router as newsRoute };

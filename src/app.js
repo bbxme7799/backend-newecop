@@ -10,7 +10,7 @@ import helmet  from 'helmet';
 
 import { NotFoundRequestException } from "./exceptions/not-found-request.exception.js";
 import { errorHandlerMiddleware } from "./middlewares/error-handler.middleware.js";
-import { hackerNewFetchAlltime } from "./schedules/fetchalltime/main.js";
+// import { hackerNewFetchAlltime } from "./schedules/fetchalltime/main.js";
 import { hackerNewFetchToday } from "./schedules/hackerNewFetchToday.js";
 import { scrapeDarkReading } from "./schedules/darkreadingToday.js";
 import { fetchDataAndSave } from "./schedules/update-trend.js";
